@@ -278,4 +278,17 @@ final class Form {
 	public function toArray(): array {
 		return array_merge( $this->data, array( 'fields' => array_map( static fn ( Field $field ): array => $field->toArray(), $this->fields ) ) );
 	}
+
+	/**
+	 * Identifica la versión editable, excluyendo los contadores y metadatos.
+	 *
+	 * @return string
+	 */
+	public function revision(): string {
+		$data = $this->toArray();
+		foreach ( array( 'entries_count', 'created_at', 'updated_at', 'created_by' ) as $key ) {
+			unset( $data[ $key ] );
+		}
+		return hash( 'sha256', (string) wp_json_encode( $data ) );
+	}
 }

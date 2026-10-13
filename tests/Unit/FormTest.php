@@ -86,8 +86,8 @@ final class FormTest extends TestCase {
 			case 'invalid_status': $data['status'] = 'evil'; break;
 			case 'negative_capacity': $data['settings'] = array( 'capacity' => -1 ); break;
 			case 'string_boolean': $data['fields'][0]['required'] = 'false'; break;
-			case 'duplicate_role': $data['fields'][0]['role'] = 'email'; break;
-			case 'bad_range': $data['fields'][0]['validation'] = array( 'min' => 5, 'max' => 2 ); break;
+			case 'duplicate_role': $data['fields'][0]['type'] = 'email'; $data['fields'][0]['role'] = 'email'; break;
+			case 'bad_range': $data['fields'][0]['type'] = 'number'; $data['fields'][0]['validation'] = array( 'min' => 5, 'max' => 2 ); break;
 			case 'invalid_length': $data['fields'][0]['validation'] = array( 'maxlength' => 1.5 ); break;
 			case 'impossible_date': $data['settings'] = array( 'opens_at' => '2026-02-30T08:00' ); break;
 			case 'reversed_dates': $data['settings'] = array( 'opens_at' => '2026-10-14T08:00', 'closes_at' => '2026-10-13T08:00' ); break;

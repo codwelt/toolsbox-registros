@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Codwelt\ToolsBoxRegistros\Repository;
 
 use Codwelt\ToolsBoxRegistros\Domain\Form;
+use Codwelt\ToolsBoxRegistros\Services\Validator;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -27,17 +28,25 @@ final class EntryRepository extends Repository {
 	 * @param Form                $form Formulario guardado.
 	 * @param array<string,mixed> $values Valores saneados por el servicio de envío.
 	 * @param array<string,mixed> $meta Estado, usuario y metadatos de origen.
+	 * @param callable|null       $guard Validación pública con el formulario bloqueado.
 	 * @return int|\WP_Error
 	 */
-	public function create( Form $form, array $values, array $meta = array() ): int|\WP_Error {
+	public function create( Form $form, array $values, array $meta = array(), ?callable $guard = null ): int|\WP_Error {
 		try {
 			list( $id, $saved_form, $saved_values ) = $this->transaction(
-				function () use ( $form, $values, $meta ): array {
+				function () use ( $form, $values, $meta, $guard ): array {
 					$row = $this->row( 'SELECT * FROM ' . $this->table( 'forms' ) . ' WHERE id = %d FOR UPDATE', array( $form->id() ) );
 					if ( null === $row || 'trash' === $row['status'] ) {
 						throw new \InvalidArgumentException( __( 'El formulario no existe o está en la papelera.', 'toolsbox-registros' ) );
 					}
-					$current  = Form::fromArray( $row );
+					$current = Form::fromArray( $row );
+					if ( null !== $guard ) {
+						$checked = $guard( $current, $values );
+						if ( is_wp_error( $checked ) ) {
+							return array( $checked, $current, array() );
+						}
+						$values = $checked;
+					}
 					$settings = $current->settings();
 					$status   = $meta['status'] ?? $settings['default_status'];
 					if ( ! in_array( $status, self::STATUSES, true ) ) {
@@ -67,7 +76,7 @@ final class EntryRepository extends Repository {
 						throw new \InvalidArgumentException( __( 'Debes completar el campo principal configurado para controlar duplicados.', 'toolsbox-registros' ) );
 					}
 					if ( ( 'email' === $settings['prevent_duplicates'] && null !== $email && $this->existsByEmail( $form->id(), $email ) ) || ( 'document' === $settings['prevent_duplicates'] && null !== $document && $this->existsByDocument( $form->id(), $document ) ) ) {
-						throw new \InvalidArgumentException( __( 'Ya existe una inscripción con estos datos.', 'toolsbox-registros' ) );
+						throw new \InvalidArgumentException( __( 'Ya existe una inscripción con estos datos.', 'toolsbox-registros' ), 409 );
 					}
 					if ( self::occupies_capacity( $status ) && $settings['capacity'] > 0 && (int) $row['entries_count'] >= $settings['capacity'] ) {
 						if ( ! $settings['waitlist'] ) {
@@ -116,8 +125,26 @@ final class EntryRepository extends Repository {
 		} catch ( \RuntimeException | \InvalidArgumentException $exception ) {
 			return $this->error( $exception );
 		}
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
 		do_action( 'tbreg_entry_created', $id, $saved_form, $saved_values );
 		return $id;
+	}
+
+	/**
+	 * Verifica la garantía transaccional antes de un envío público.
+	 *
+	 * @return bool
+	 */
+	public function supportsTransactions(): bool {
+		foreach ( array( 'forms', 'entries', 'entry_values' ) as $suffix ) {
+			$status = $this->row( 'SHOW TABLE STATUS LIKE %s', array( $this->db->esc_like( $this->db->prefix . 'tbreg_' . $suffix ) ) );
+			if ( null === $status || 'InnoDB' !== $status['Engine'] ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -188,6 +215,124 @@ final class EntryRepository extends Repository {
 		}
 		$form = ( new FormRepository( $this->db ) )->find( (int) $entry['form_id'] );
 		return $this->value_map( $this->rows( 'SELECT field_key, value FROM ' . $this->table( 'entry_values' ) . ' WHERE entry_id = %d ORDER BY id', array( $entry_id ) ), $form );
+	}
+
+	/**
+	 * Recupera valores de una página con una única consulta.
+	 *
+	 * @param array<array<string,mixed>> $entries Inscripciones.
+	 * @param array<int,Form>            $forms Esquemas cargados por lote.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function valuesForEntries( array $entries, array $forms ): array {
+		$ids = array_map( 'intval', array_column( $entries, 'id' ) );
+		if ( array() === $ids ) {
+			return array();
+		}
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$grouped      = array();
+		$result       = array();
+		foreach ( $this->rows( 'SELECT entry_id, field_key, value FROM ' . $this->table( 'entry_values' ) . " WHERE entry_id IN ({$placeholders}) ORDER BY entry_id, id", $ids ) as $row ) {
+			$grouped[ (int) $row['entry_id'] ][] = $row;
+		}
+		foreach ( $entries as $entry ) {
+			$result[ (int) $entry['id'] ] = $this->value_map( $grouped[ (int) $entry['id'] ] ?? array(), $forms[ (int) $entry['form_id'] ] ?? null );
+		}
+		return $result;
+	}
+	/**
+	 * Revisión del registro y sus valores para evitar sobrescrituras simultáneas.
+	 *
+	 * @param array<string,mixed> $entry Inscripción.
+	 * @param array<string,mixed> $values Valores guardados.
+	 * @return string
+	 */
+	public static function revision( array $entry, array $values ): string {
+		ksort( $values );
+		return hash( 'sha256', (string) wp_json_encode( array( $entry, $values ) ) );
+	}
+	/**
+	 * Edita datos y estado atómicamente con historial, cupos y duplicados.
+	 *
+	 * @param int                 $id Inscripción.
+	 * @param array<string,mixed> $raw Valores recibidos.
+	 * @param string              $revision Revisión de inscripción.
+	 * @param string              $form_revision Revisión del formulario.
+	 * @param string              $status Estado elegido.
+	 * @return bool|\WP_Error
+	 */
+	public function updateValues( int $id, array $raw, string $revision, string $form_revision, string $status ): bool|\WP_Error {
+		$entry = $this->find( $id );
+		if ( null === $entry || ! in_array( $status, self::STATUSES, true ) ) {
+			return new \WP_Error( 'tbreg_invalid_data', __( 'La inscripción o el estado no es válido.', 'toolsbox-registros' ) );
+		}
+		$old_status = $entry['status'];
+		try {
+			$result = $this->transaction(
+				function () use ( $id, $entry, $raw, $revision, $form_revision, $status, &$old_status ): bool|\WP_Error {
+					$form_row = $this->row( 'SELECT * FROM ' . $this->table( 'forms' ) . ' WHERE id = %d FOR UPDATE', array( (int) $entry['form_id'] ) );
+					$current  = $this->row( 'SELECT * FROM ' . $this->table( 'entries' ) . ' WHERE id = %d FOR UPDATE', array( $id ) );
+					if ( null === $form_row || null === $current ) {
+						throw new \InvalidArgumentException( __( 'La inscripción ya no existe.', 'toolsbox-registros' ) );
+					}
+					$form   = Form::fromArray( $form_row );
+					$stored = $this->values( $id );
+					if ( ! hash_equals( self::revision( $current, $stored ), $revision ) || ! hash_equals( $form->revision(), $form_revision ) ) {
+						return new \WP_Error( 'tbreg_conflict', __( 'La inscripción o el formulario cambió. Recarga el detalle antes de guardar.', 'toolsbox-registros' ) );
+					}
+					$values = ( new Validator() )->validate_edit( $form, $raw, $stored );
+					if ( is_wp_error( $values ) ) {
+						return $values;
+					}
+					$normalized = $this->normalize_values( $form, $values );
+					foreach ( $form->fields() as $field ) {
+						if ( $field->storesValue() && in_array( $field->get( 'role' ), array( 'email', 'document' ), true ) && array_key_exists( $field->key(), $values ) ) {
+							$current[ $field->get( 'role' ) ] = '' === $values[ $field->key() ] ? null : $values[ $field->key() ];
+						}
+					}
+					$old_status = $current['status'];
+					$delta      = (int) self::occupies_capacity( $status ) - (int) self::occupies_capacity( $old_status );
+					$settings   = $form->settings();
+					if ( $delta > 0 && $settings['capacity'] > 0 && (int) $form_row['entries_count'] >= $settings['capacity'] ) {
+						throw new \InvalidArgumentException( __( 'No hay cupo para confirmar esta inscripción.', 'toolsbox-registros' ) );
+					}
+					$role = $settings['prevent_duplicates'];
+					if ( 'cancelled' !== $status && in_array( $role, array( 'email', 'document' ), true ) && ( empty( $current[ $role ] ) || $this->other_duplicate( $form->id(), $id, $role, $current[ $role ] ) ) ) {
+						throw new \InvalidArgumentException( __( 'Falta el dato principal o ya existe otra inscripción con esos datos.', 'toolsbox-registros' ), 409 );
+					}
+					foreach ( $normalized as $key => $value ) {
+						$this->execute( 'DELETE FROM ' . $this->table( 'entry_values' ) . ' WHERE entry_id = %d AND field_key = %s', array( $id, $key ) );
+						$this->insert(
+							'entry_values',
+							array(
+								'entry_id'  => $id,
+								'field_key' => $key,
+								'value'     => $value,
+							)
+						);
+					}
+					$assignments = array();
+					$args        = array();
+					foreach ( array( 'email', 'document' ) as $column ) {
+						$assignments[] = $column . ( null === $current[ $column ] ? ' = NULL' : ' = %s' );
+						if ( null !== $current[ $column ] ) {
+							$args[] = $current[ $column ];
+						}
+					}
+					$this->execute( 'UPDATE ' . $this->table( 'entries' ) . ' SET ' . implode( ', ', $assignments ) . ', status = %s, updated_at = %s WHERE id = %d', array_merge( $args, array( $status, current_time( 'mysql', true ), $id ) ) );
+					if ( 0 !== $delta ) {
+						( new FormRepository( $this->db ) )->incrementCount( $form->id(), $delta );
+					}
+					return true;
+				}
+			);
+		} catch ( \RuntimeException | \InvalidArgumentException $exception ) {
+			return $this->error( $exception );
+		}
+		if ( true === $result && $status !== $old_status ) {
+			do_action( 'tbreg_entry_status_changed', $id, $status, $old_status, (int) $entry['form_id'] );
+		}
+		return $result;
 	}
 
 	/**
@@ -293,7 +438,9 @@ final class EntryRepository extends Repository {
 		$total                  = (int) $this->scalar( 'SELECT COUNT(*) FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where, $values );
 		$limit                  = min( 200, max( 1, (int) ( $filters['per_page'] ?? 20 ) ) );
 		$page                   = max( 1, (int) ( $filters['page'] ?? 1 ) );
-		$items                  = $this->rows( 'SELECT e.* FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where . ' ORDER BY e.id DESC LIMIT %d OFFSET %d', array_merge( $values, array( $limit, ( $page - 1 ) * $limit ) ) );
+		$sort                   = in_array( $filters['orderby'] ?? '', array( 'id', 'created_at', 'email', 'status' ), true ) ? $filters['orderby'] : 'id';
+		$order                  = 'ASC' === strtoupper( $filters['order'] ?? '' ) ? 'ASC' : 'DESC';
+		$items                  = $this->rows( 'SELECT e.* FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where . " ORDER BY e.{$sort} {$order}, e.id {$order} LIMIT %d OFFSET %d", array_merge( $values, array( $limit, ( $page - 1 ) * $limit ) ) );
 		return array(
 			'items' => $items,
 			'total' => $total,

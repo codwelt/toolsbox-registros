@@ -158,7 +158,7 @@ abstract class Repository {
 	 */
 	protected function error( \Throwable $exception ): \WP_Error {
 		if ( $exception instanceof \InvalidArgumentException ) {
-			return new \WP_Error( 'tbreg_invalid_data', $exception->getMessage() );
+			return new \WP_Error( 'tbreg_invalid_data', $exception->getMessage(), array( 'status' => 409 === $exception->getCode() ? 409 : 422 ) );
 		}
 		return new \WP_Error( 'tbreg_db_error', __( 'No se pudo guardar el registro. Inténtalo de nuevo.', 'toolsbox-registros' ) );
 	}

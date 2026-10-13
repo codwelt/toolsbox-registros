@@ -10,6 +10,12 @@ declare(strict_types=1);
 namespace Codwelt\ToolsBoxRegistros\Tests\Integration;
 
 use Codwelt\ToolsBoxRegistros\Domain\Form;
+use Codwelt\ToolsBoxRegistros\Domain\Field;
+use Codwelt\ToolsBoxRegistros\Admin\FormEditorPage;
+use Codwelt\ToolsBoxRegistros\Admin\FormsListTable;
+use Codwelt\ToolsBoxRegistros\Admin\Menu;
+use Codwelt\ToolsBoxRegistros\Admin\Templates;
+use Codwelt\ToolsBoxRegistros\Admin\Notices;
 use Codwelt\ToolsBoxRegistros\Install\Installer;
 use Codwelt\ToolsBoxRegistros\Repository\EntryRepository;
 use Codwelt\ToolsBoxRegistros\Repository\FormRepository;
@@ -23,6 +29,8 @@ final class RepositoriesTest extends TestCase {
 	private static \wpdb $db;
 	private FormRepository $forms;
 	private EntryRepository $entries;
+	private int $previous_user;
+	private \Closure $cap_filter;
 
 	public static function setUpBeforeClass(): void {
 		if ( '1' !== getenv( 'TBREG_RUN_INTEGRATION' ) ) {
@@ -58,11 +66,277 @@ final class RepositoriesTest extends TestCase {
 	}
 
 	protected function setUp(): void {
+		$this->previous_user = get_current_user_id();
+		$users = get_users( array( 'number' => 1, 'fields' => 'ID' ) );
+		if ( empty( $users ) ) {
+			throw new \RuntimeException( 'La integración requiere un usuario WordPress local.' );
+		}
+		wp_set_current_user( (int) $users[0] );
+		$this->cap_filter = static function ( array $caps ): array {
+			if ( 0 === get_current_user_id() ) return $caps;
+			foreach ( array( 'tbreg_manage_forms', 'tbreg_view_entries', 'tbreg_edit_entries', 'tbreg_export_entries' ) as $cap ) {
+				$caps[ $cap ] = true;
+			}
+			return $caps;
+		};
+		add_filter( 'user_has_cap', $this->cap_filter );
 		foreach ( array( 'entry_values', 'entries', 'forms' ) as $suffix ) {
 			self::$db->query( 'DELETE FROM `' . self::$db->prefix . 'tbreg_' . $suffix . '`' );
 		}
 		$this->forms = new FormRepository( self::$db );
 		$this->entries = new EntryRepository( self::$db );
+	}
+
+	protected function tearDown(): void {
+		remove_filter( 'user_has_cap', $this->cap_filter );
+		wp_set_current_user( $this->previous_user );
+		$_GET = array();
+		$_REQUEST = array();
+	}
+
+	private function editor_input( Form $form ): array {
+		return array(
+			'tbreg_nonce' => wp_create_nonce( 'tbreg_save_form' ),
+			'tbreg_id' => (string) $form->id(),
+			'tbreg_revision' => $form->revision(),
+			'tbreg_title' => $form->get( 'title' ),
+			'tbreg_slug' => $form->get( 'slug' ),
+			'tbreg_description' => $form->get( 'description' ),
+			'tbreg_status' => $form->get( 'status' ),
+			'tbreg_fields' => wp_json_encode( $form->toArray()['fields'] ),
+			'tbreg_settings' => $form->settings(),
+		);
+	}
+
+	public function test_editor_saves_all_types_order_options_and_settings(): void {
+		$fields = array();
+		foreach ( array_reverse( Field::TYPES ) as $type ) {
+			$field = array( 'key' => 'f_' . $type, 'type' => $type, 'label' => 'Campo ' . $type );
+			if ( in_array( $type, array( 'select', 'radio', 'checkbox' ), true ) ) {
+				$field['options'] = array( array( 'label' => 'Medellín', 'value' => 'medellin' ), array( 'label' => 'Bogotá', 'value' => 'bogota' ) );
+			}
+			$fields[] = $field;
+		}
+		$form = Form::fromArray( array( 'title' => 'Los quince tipos 😀', 'fields' => $fields ) );
+		$input = $this->editor_input( $form );
+		$dom_fields = getenv( 'TBREG_EDITOR_DOM_FIELDS' );
+		if ( false !== $dom_fields && is_file( $dom_fields ) ) {
+			$input['tbreg_fields'] = file_get_contents( $dom_fields );
+		}
+		$input['tbreg_settings']['capacity'] = '25';
+		$input['tbreg_settings']['waitlist'] = '1';
+		$input['tbreg_settings']['opens_at'] = '2026-11-01T09:00';
+		$input['tbreg_settings']['closes_at'] = '2026-11-03T15:00';
+		$input['tbreg_settings']['event']['starts_at'] = '2026-11-04T09:00';
+		$input['tbreg_settings']['notify_admin']['to'] = 'uno@example.test, dos@example.test';
+		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$loaded = $this->forms->find( $saved->id() );
+		$this->assertSame( array_reverse( Field::TYPES ), array_map( static fn ( Field $field ): string => $field->get( 'type' ), $loaded->fields() ) );
+		$this->assertSame( array( 'medellin', 'bogota' ), array_column( $loaded->toArray()['fields'][7]['options'], 'value' ) );
+		$this->assertSame( 25, $loaded->settings()['capacity'] );
+		$this->assertTrue( $loaded->settings()['waitlist'] );
+		$this->assertSame( '2026-11-01 09:00:00', $loaded->settings()['opens_at'] );
+		$this->assertSame( '2026-11-04 09:00:00', $loaded->settings()['event']['starts_at'] );
+		$this->assertTrue( $loaded->toArray()['fields'][2]['required'] );
+	}
+
+	public function test_editor_generates_option_values_on_server_and_remaps_defaults(): void {
+		$form = Form::fromArray( array( 'title' => 'Opciones', 'fields' => array( array( 'key' => 'f_city', 'type' => 'select', 'label' => 'Ciudad', 'options' => array( array( 'label' => 'Bogotá & Norte', 'value' => 'preview' ) ), 'default' => 'preview' ) ) ) );
+		$input = $this->editor_input( $form );
+		$fields = $form->toArray()['fields'];
+		$fields[0]['options'][0]['auto'] = true;
+		$input['tbreg_fields'] = wp_json_encode( $fields );
+		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$this->assertSame( sanitize_title( 'Bogotá & Norte' ), $saved->toArray()['fields'][0]['options'][0]['value'] );
+		$this->assertSame( $saved->toArray()['fields'][0]['options'][0]['value'], $saved->toArray()['fields'][0]['default'] );
+		$this->assertArrayNotHasKey( 'auto', $saved->toArray()['fields'][0]['options'][0] );
+	}
+
+	public function test_editor_rejects_tampering_without_changing_saved_form(): void {
+		$form = $this->form();
+		$input = $this->editor_input( $form );
+		$fields = $form->toArray()['fields'];
+		$cases = array( '{broken', '{}', '[null]' );
+		$bad = $fields; $bad[0]['type'] = 'exec'; $cases[] = wp_json_encode( $bad );
+		$bad = $fields; $bad[1]['key'] = $bad[0]['key']; $cases[] = wp_json_encode( $bad );
+		$bad = $fields; $bad[3]['options'][1]['value'] = 'bogota'; $cases[] = wp_json_encode( $bad );
+		$editor = new FormEditorPage( $this->forms );
+		foreach ( $cases as $json ) {
+			$input['tbreg_fields'] = $json;
+			$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+			$this->assertSame( $form->toArray(), $this->forms->find( $form->id() )->toArray() );
+		}
+		$input = $this->editor_input( $form );
+		$input['tbreg_settings']['waitlist'] = array( '1' );
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		$input = $this->editor_input( $form );
+		$input['tbreg_settings']['event']['starts_at'] = '2026-02-30T12:00';
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		$input = $this->editor_input( $form );
+		$input['tbreg_settings']['notify_admin']['to'] = 'bad-address';
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+	}
+
+	public function test_editor_requires_nonce_and_capability_and_page_access(): void {
+		$form = $this->form();
+		$input = $this->editor_input( $form );
+		$input['tbreg_nonce'] = 'invalid';
+		$editor = new FormEditorPage( $this->forms );
+		$this->assertSame( 'tbreg_invalid_nonce', $editor->save( $input )->get_error_code() );
+		$input = $this->editor_input( $form );
+		wp_set_current_user( 0 );
+		$this->assertSame( 'tbreg_forbidden', $editor->save( $input )->get_error_code() );
+		$this->assertSame( 'tbreg_forbidden', ( new Menu( $this->forms ) )->perform_action( 'trash', $form->id(), '' )->get_error_code() );
+		$handler = static fn () => static function ( $message, $title, $args ): void { throw new \RuntimeException( (string) $args['response'] ); };
+		add_filter( 'wp_die_handler', $handler );
+		try {
+			foreach ( array( array( $editor, 'context' ), array( new Menu( $this->forms ), 'render_forms' ), array( new Menu( $this->forms ), 'render_entries' ), array( new Menu( $this->forms ), 'render_export' ) ) as $callback ) {
+				try { $callback(); $this->fail( 'Acceso no autorizado.' ); } catch ( \RuntimeException $exception ) { $this->assertSame( '403', $exception->getMessage() ); }
+			}
+		} finally {
+			remove_filter( 'wp_die_handler', $handler );
+		}
+	}
+
+	public function test_editor_revision_rejects_stale_edits_but_allows_counter_updates(): void {
+		$form = $this->form();
+		$input = $this->editor_input( $form );
+		$this->entry( $form );
+		$editor = new FormEditorPage( $this->forms );
+		$input['tbreg_title'] = 'Nuevo nombre';
+		$this->assertInstanceOf( Form::class, $editor->save( $input ) );
+		$input['tbreg_title'] = 'Edición antigua';
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		$this->assertSame( 'Nuevo nombre', $this->forms->find( $form->id() )->get( 'title' ) );
+		$this->assertSame( 1, $this->forms->find( $form->id() )->get( 'entries_count' ) );
+	}
+
+	public function test_admin_post_handler_checks_method_and_saves_unslashed_input(): void {
+		$form = $this->form();
+		$editor = new FormEditorPage( $this->forms );
+		$previous_method = $_SERVER['REQUEST_METHOD'] ?? null;
+		$handler = static fn () => static function ( $message, $title, $args ): void { throw new \RuntimeException( (string) $args['response'] ); };
+		add_filter( 'wp_die_handler', $handler );
+		$redirect = static function ( string $location ): string { throw new \RuntimeException( $location ); };
+		add_filter( 'wp_redirect', $redirect );
+		try {
+			$_SERVER['REQUEST_METHOD'] = 'GET';
+			try { $editor->handle_save(); $this->fail( 'Guardado por GET.' ); } catch ( \RuntimeException $exception ) { $this->assertSame( '405', $exception->getMessage() ); }
+			$_SERVER['REQUEST_METHOD'] = 'POST';
+			$_REQUEST['tbreg_nonce'] = 'invalid';
+			try { $editor->handle_save(); $this->fail( 'Nonce inválido aceptado.' ); } catch ( \RuntimeException $exception ) { $this->assertSame( '403', $exception->getMessage() ); }
+			$input = $this->editor_input( $form ); $input['tbreg_title'] = 'Curso "Diseño" de O\'Connor';
+			$_POST = wp_slash( $input ); $_REQUEST = $_POST;
+			try {
+				$editor->handle_save(); $this->fail( 'Falta la redirección PRG.' );
+			} catch ( \RuntimeException $exception ) {
+				$query = array(); parse_str( (string) wp_parse_url( $exception->getMessage(), PHP_URL_QUERY ), $query );
+				$this->assertSame( 'toolsbox-registros-edit', $query['page'] );
+				$this->assertSame( (string) $form->id(), $query['id'] );
+				$this->assertSame( $input['tbreg_title'], $this->forms->find( $form->id() )->get( 'title' ) );
+				$this->assertNotEmpty( $query['tbreg_notice'] );
+				$_GET['tbreg_notice'] = $query['tbreg_notice']; ob_start(); Notices::render(); $notice = ob_get_clean();
+				$this->assertStringContainsString( 'Formulario guardado', $notice );
+			}
+		} finally {
+			remove_filter( 'wp_redirect', $redirect ); remove_filter( 'wp_die_handler', $handler );
+			$_POST = array(); $_REQUEST = array();
+			if ( null === $previous_method ) unset( $_SERVER['REQUEST_METHOD'] ); else $_SERVER['REQUEST_METHOD'] = $previous_method;
+		}
+	}
+
+	public function test_editor_archives_used_fields_and_rejects_type_changes(): void {
+		$form = $this->form();
+		$this->entry( $form );
+		$this->assertContains( 'f_city', $this->forms->usedFieldKeys( $form->id() ) );
+		$editor = new FormEditorPage( $this->forms );
+		$input = $this->editor_input( $form );
+		$fields = $form->toArray()['fields'];
+		$fields[3]['type'] = 'radio'; $input['tbreg_fields'] = wp_json_encode( $fields );
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		array_splice( $fields, 3, 1 ); $input['tbreg_fields'] = wp_json_encode( $fields );
+		$saved = $editor->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$this->assertTrue( $saved->toArray()['fields'][4]['archived'] );
+		$this->assertSame( 'f_city', $saved->toArray()['fields'][4]['key'] );
+	}
+
+	public function test_form_actions_require_specific_nonces_and_preserve_entries(): void {
+		$form = $this->form(); $id = $this->entry( $form );
+		$menu = new Menu( $this->forms );
+		$this->assertInstanceOf( \WP_Error::class, $menu->perform_action( 'delete', $form->id(), wp_create_nonce( 'tbreg_form_action_delete_' . $form->id() ) ) );
+		$this->assertInstanceOf( \WP_Error::class, $menu->perform_action( 'trash', $form->id(), wp_create_nonce( 'tbreg_form_action_close_' . $form->id() ) ) );
+		foreach ( array( 'close' => 'closed', 'trash' => 'trash', 'restore' => 'draft' ) as $action => $status ) {
+			$result = $menu->perform_action( $action, $form->id(), wp_create_nonce( 'tbreg_form_action_' . $action . '_' . $form->id() ) );
+			$this->assertInstanceOf( Form::class, $result );
+			$this->assertSame( $status, $result->get( 'status' ) );
+			$this->assertNotNull( $this->entries->find( $id ) );
+		}
+		$copy = $menu->perform_action( 'duplicate', $form->id(), wp_create_nonce( 'tbreg_form_action_duplicate_' . $form->id() ) );
+		$this->assertInstanceOf( Form::class, $copy );
+		$this->assertSame( 0, $copy->get( 'entries_count' ) );
+	}
+
+	public function test_templates_are_valid_have_unique_keys_and_copy_as_drafts(): void {
+		foreach ( Templates::all() as $name => $template ) {
+			$form = Form::fromArray( array( 'title' => $template['label'], 'fields' => $template['fields'], 'settings' => $template['settings'] ?? array() ) );
+			$saved = ( new FormEditorPage( $this->forms ) )->save( $this->editor_input( $form ) );
+			$this->assertInstanceOf( Form::class, $saved );
+			$this->assertSame( 'draft', $saved->get( 'status' ) );
+			$this->assertSame( count( $template['fields'] ), count( array_unique( array_column( $template['fields'], 'key' ) ) ) );
+		}
+		$this->assertSame( 3, $this->forms->count() );
+		$this->assertSame( 1, $this->forms->count( array( 'search' => 'Webinar' ) ) );
+	}
+
+	public function test_notices_are_escaped_user_scoped_and_consumed_once(): void {
+		$token = Notices::put( '<script>alert(1)</script>', true );
+		$_GET['tbreg_notice'] = $token;
+		ob_start(); Notices::render(); $output = ob_get_clean();
+		$this->assertStringContainsString( '&lt;script&gt;', $output );
+		$this->assertStringNotContainsString( '<script>', $output );
+		ob_start(); Notices::render(); $this->assertSame( '', ob_get_clean() );
+		$token = Notices::put( 'Privado' ); $_GET['tbreg_notice'] = $token;
+		$user = get_current_user_id(); wp_set_current_user( 0 );
+		ob_start(); Notices::render(); $this->assertSame( '', ob_get_clean() );
+		wp_set_current_user( $user );
+		ob_start(); Notices::render(); $this->assertStringContainsString( 'Privado', ob_get_clean() );
+	}
+
+	public function test_admin_html_assets_and_list_pagination(): void {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		set_current_screen( 'toplevel_page_toolsbox-registros' );
+		for ( $i = 0; $i < 21; ++$i ) $this->form();
+		$table = new FormsListTable( $this->forms ); $table->prepare_items();
+		$this->assertCount( 20, $table->items );
+		$_GET['paged'] = '2'; $_REQUEST['paged'] = '2'; $table->prepare_items(); $this->assertCount( 1, $table->items );
+		$_GET = array();
+		$_REQUEST = array();
+		$menu = new Menu( $this->forms ); $menu->register(); $menu->menu();
+		$this->assertNotFalse( has_action( 'admin_post_tbreg_save_form' ) );
+		$this->assertNotFalse( has_action( 'admin_post_tbreg_form_action' ) );
+		wp_dequeue_script( 'tbreg-builder' ); wp_dequeue_style( 'tbreg-admin' );
+		$menu->assets( 'dashboard' );
+		$this->assertFalse( wp_script_is( 'tbreg-builder', 'enqueued' ) );
+		$this->assertFalse( wp_style_is( 'tbreg-admin', 'enqueued' ) );
+		$menu->assets( 'toolsbox-registros_page_toolsbox-registros-edit' );
+		$this->assertTrue( wp_script_is( 'tbreg-builder', 'enqueued' ) );
+		$this->assertSame( array( 'jquery-ui-sortable' ), wp_scripts()->registered['tbreg-builder']->deps );
+		ob_start(); ( new FormEditorPage( $this->forms ) )->render(); $html = ob_get_clean();
+		$this->assertStringContainsString( 'name="tbreg_nonce"', $html );
+		$this->assertStringContainsString( 'name="tbreg_fields"', $html );
+		$this->assertSame( 15, substr_count( $html, 'class="button tbreg-add-field"' ) );
+		$this->assertSame( 4, substr_count( $html, 'role="tabpanel"' ) );
+		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
+		if ( false !== $directory && is_dir( $directory ) ) {
+			file_put_contents( $directory . '/editor.html', $html );
+			file_put_contents( $directory . '/builder-config.js', wp_scripts()->get_data( 'tbreg-builder', 'data' ) );
+		}
+		ob_start(); $menu->render_forms(); $output = ob_get_clean();
+		$this->assertStringContainsString( 'tbreg_form_action', $output );
+		$this->assertStringContainsString( '[toolsbox_registro', $output );
 	}
 
 	public static function tearDownAfterClass(): void {

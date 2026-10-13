@@ -72,13 +72,14 @@ final class FormRepository extends Repository {
 	/**
 	 * Guarda el formulario conservando sus datos históricos.
 	 *
-	 * @param Form $form Formulario validado.
+	 * @param Form        $form Formulario validado.
+	 * @param string|null $revision Revisión que estaba abierta en el editor.
 	 * @return Form|\WP_Error
 	 */
-	public function save( Form $form ): Form|\WP_Error {
+	public function save( Form $form, ?string $revision = null ): Form|\WP_Error {
 		try {
 			$saved = $this->transaction(
-				function () use ( $form ): Form {
+				function () use ( $form, $revision ): Form {
 					$data = $form->toArray();
 					$old  = null;
 					if ( $form->id() > 0 ) {
@@ -86,7 +87,10 @@ final class FormRepository extends Repository {
 						if ( null === $row ) {
 							throw new \InvalidArgumentException( __( 'El formulario ya no existe.', 'toolsbox-registros' ) );
 						}
-						$old            = Form::fromArray( $row );
+						$old = Form::fromArray( $row );
+						if ( null !== $revision && ! hash_equals( $old->revision(), $revision ) ) {
+							throw new \InvalidArgumentException( __( 'Otro usuario modificó el formulario. Recarga la página antes de guardar para revisar los cambios.', 'toolsbox-registros' ) );
+						}
 						$data['fields'] = $this->preserve_history( $old, $form );
 					}
 					$data['slug'] = $this->unique_slug( $data['slug'], $form->id() );
@@ -233,5 +237,60 @@ final class FormRepository extends Repository {
 	 */
 	public function incrementCount( int $id, int $amount = 1 ): bool {
 		return $this->execute( 'UPDATE ' . $this->table( 'forms' ) . ' SET entries_count = GREATEST(0, CAST(entries_count AS SIGNED) + %d), updated_at = %s WHERE id = %d', array( $amount, current_time( 'mysql', true ), $id ) ) > 0;
+	}
+
+	/**
+	 * Opciones ligeras de todos los formularios, incluida la papelera histórica.
+	 *
+	 * @return array<array<string,mixed>>
+	 */
+	public function summaries(): array {
+		return $this->rows( 'SELECT id, title, status FROM ' . $this->table( 'forms' ) . ' ORDER BY title ASC' );
+	}
+	/**
+	 * Carga esquemas en una sola consulta para una página de inscripciones.
+	 *
+	 * @param array<int> $ids Formularios de la página.
+	 * @return array<int,Form>
+	 */
+	public function findMany( array $ids ): array {
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn ( int $id ): bool => $id > 0 ) ) );
+		if ( array() === $ids ) {
+			return array();
+		}
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$forms        = array();
+		foreach ( $this->rows( 'SELECT * FROM ' . $this->table( 'forms' ) . " WHERE id IN ({$placeholders})", $ids ) as $row ) {
+			$forms[ (int) $row['id'] ] = Form::fromArray( $row );
+		}
+		return $forms;
+	}
+
+	/**
+	 * Cuenta formularios para la paginación del administrador.
+	 *
+	 * @param array<string,mixed> $args Filtros de estado y búsqueda.
+	 * @return int
+	 */
+	public function count( array $args = array() ): int {
+		$sql    = 'SELECT COUNT(*) FROM ' . $this->table( 'forms' ) . ' WHERE status ' . ( isset( $args['status'] ) ? '= %s' : '<> %s' );
+		$values = array( $args['status'] ?? 'trash' );
+		if ( ! empty( $args['search'] ) ) {
+			$search   = '%' . $this->db->esc_like( (string) $args['search'] ) . '%';
+			$sql     .= ' AND (title LIKE %s OR slug LIKE %s)';
+			$values[] = $search;
+			$values[] = $search;
+		}
+		return (int) $this->scalar( $sql, $values );
+	}
+
+	/**
+	 * Devuelve los identificadores de campos con datos históricos.
+	 *
+	 * @param int $id Formulario.
+	 * @return array<string>
+	 */
+	public function usedFieldKeys( int $id ): array {
+		return array_column( $this->rows( 'SELECT DISTINCT v.field_key FROM ' . $this->table( 'entry_values' ) . ' v INNER JOIN ' . $this->table( 'entries' ) . ' e ON e.id = v.entry_id WHERE e.form_id = %d', array( $id ) ), 'field_key' );
 	}
 }

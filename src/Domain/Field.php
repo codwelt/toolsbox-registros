@@ -48,8 +48,45 @@ final class Field {
 		if ( ! is_string( $key ) || ! preg_match( '/^[a-z0-9_]{3,64}$/D', $key ) ) {
 			throw new \InvalidArgumentException( __( 'El identificador del campo no es válido.', 'toolsbox-registros' ) );
 		}
-		if ( ! is_string( $type ) || ! in_array( $type, self::TYPES, true ) ) {
+		if ( ! is_string( $type ) || ! preg_match( '/^[a-z][a-z0-9_]{0,31}$/D', $type ) ) {
 			throw new \InvalidArgumentException( __( 'El tipo de campo no es válido.', 'toolsbox-registros' ) );
+		}
+		$custom = in_array( $type, self::TYPES, true ) ? null : ( new FieldTypeRegistry() )->get( $type );
+		if ( null === $custom ) {
+			if ( ! in_array( $type, array( 'text', 'tel', 'document', 'textarea', 'email', 'url', 'number' ), true ) ) {
+				$data['placeholder'] = '';
+			}
+			$roles = array(
+				'text'     => array( 'name', 'document' ),
+				'textarea' => array( 'name' ),
+				'email'    => array( 'email' ),
+				'document' => array( 'document' ),
+			);
+			if ( ! in_array( $data['role'] ?? null, $roles[ $type ] ?? array(), true ) ) {
+				$data['role'] = null;
+			}
+			if ( in_array( $type, array( 'heading', 'hidden' ), true ) ) {
+				$data['required'] = false;
+			}
+			if ( 'consent' === $type ) {
+				$data['required'] = true;
+				$data['default']  = '';
+			}
+			if ( 'heading' === $type ) {
+				$data['default'] = '';
+				$data['width']   = 'full';
+			}
+			if ( 'hidden' !== $type ) {
+				$data['query_param'] = '';
+			}
+			if ( isset( $data['validation'] ) && is_array( $data['validation'] ) ) {
+				foreach ( array( 'min', 'max', 'minlength', 'maxlength', 'pattern' ) as $limit ) {
+					$allowed = str_contains( $limit, 'length' ) ? in_array( $type, array( 'text', 'tel', 'document', 'textarea', 'email', 'url' ), true ) : ( 'pattern' === $limit ? in_array( $type, array( 'text', 'tel', 'document' ), true ) : in_array( $type, array( 'number', 'date', 'time' ), true ) );
+					if ( ! $allowed ) {
+						$data['validation'][ $limit ] = null;
+					}
+				}
+			}
 		}
 
 		$result = array(
@@ -75,7 +112,12 @@ final class Field {
 			$result[ $name ] = $value;
 		}
 		$result['width'] = $data['width'] ?? 'full';
-		$result['role']  = $data['role'] ?? null;
+		$query_param     = $data['query_param'] ?? '';
+		if ( ! is_string( $query_param ) || ( '' !== $query_param && ( 'hidden' !== $type || ! preg_match( '/^[a-zA-Z0-9_-]{1,64}$/D', $query_param ) ) ) ) {
+			throw new \InvalidArgumentException( __( 'El parámetro de URL del campo oculto no es válido.', 'toolsbox-registros' ) );
+		}
+		$result['query_param'] = $query_param;
+		$result['role']        = $data['role'] ?? null;
 		if ( ! in_array( $result['width'], array( 'full', 'half', 'third' ), true ) || ! in_array( $result['role'], array( null, 'email', 'document', 'name' ), true ) ) {
 			throw new \InvalidArgumentException( __( 'El ancho o el rol del campo no es válido.', 'toolsbox-registros' ) );
 		}
@@ -83,7 +125,7 @@ final class Field {
 		if ( ! is_array( $options ) || array_values( $options ) !== $options ) {
 			throw new \InvalidArgumentException( __( 'Las opciones deben ser una lista.', 'toolsbox-registros' ) );
 		}
-		$choice = in_array( $type, array( 'select', 'radio', 'checkbox' ), true );
+		$choice = null !== $custom ? $custom->supportsOptions() : in_array( $type, array( 'select', 'radio', 'checkbox' ), true );
 		if ( ( $choice && array() === $options ) || ( ! $choice && array() !== $options ) ) {
 			throw new \InvalidArgumentException( __( 'Los campos de selección necesitan opciones; los demás tipos no las admiten.', 'toolsbox-registros' ) );
 		}
@@ -122,6 +164,15 @@ final class Field {
 		$result['validation'] = array();
 		foreach ( array( 'min', 'max', 'minlength', 'maxlength' ) as $name ) {
 			$value = $validation[ $name ] ?? null;
+			if ( in_array( $type, array( 'date', 'time' ), true ) && in_array( $name, array( 'min', 'max' ), true ) && null !== $value ) {
+				$format = 'date' === $type ? 'Y-m-d' : ( is_string( $value ) && 8 === strlen( $value ) ? 'H:i:s' : 'H:i' );
+				$date   = is_string( $value ) ? \DateTimeImmutable::createFromFormat( '!' . $format, $value ) : false;
+				if ( false === $date || $date->format( $format ) !== $value ) {
+					throw new \InvalidArgumentException( __( 'Los límites de fecha u hora no son válidos.', 'toolsbox-registros' ) );
+				}
+				$result['validation'][ $name ] = 'time' === $type && 5 === strlen( $value ) ? $value . ':00' : $value;
+				continue;
+			}
 			if ( null !== $value && ( ! is_int( $value ) && ! is_float( $value ) ) ) {
 				throw new \InvalidArgumentException( __( 'Los límites de validación deben ser números.', 'toolsbox-registros' ) );
 			}
@@ -177,6 +228,9 @@ final class Field {
 	 * @return bool
 	 */
 	public function storesValue(): bool {
-		return ! $this->data['archived'] && 'heading' !== $this->data['type'];
+		if ( $this->data['archived'] ) {
+			return false;
+		}
+		return in_array( $this->data['type'], self::TYPES, true ) ? 'heading' !== $this->data['type'] : ( new FieldTypeRegistry() )->get( $this->data['type'] )->storesValue();
 	}
 }

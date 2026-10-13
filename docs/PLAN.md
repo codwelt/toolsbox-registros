@@ -342,10 +342,10 @@ Comandos reproducibles desde la carpeta del plugin:
 ```bash
 composer install
 vendor/bin/phpcs
-vendor/bin/phpunit --testsuite Unit
+TBREG_RUN_INTEGRATION=1 vendor/bin/phpunit --testsuite Unit
 TBREG_RUN_INTEGRATION=1 vendor/bin/phpunit
 ```
-`TBREG_WP_LOAD` permite indicar otro `wp-load.php`. Las pruebas de integración requieren un entorno WordPress `local` o `development` y una conexión MySQL con permisos para crear y borrar las tablas temporales. La UI de formularios se implementará en la fase 2.
+`TBREG_WP_LOAD` permite indicar otro `wp-load.php`. Las pruebas de integración requieren un entorno WordPress `local` o `development` y una conexión MySQL con permisos para crear y borrar las tablas temporales.
 
 ### Fase 2 — Constructor de formularios (admin)
 **Objetivo:** crear y editar formularios con campos dinámicos y sus opciones.
@@ -363,12 +363,67 @@ Tareas:
 7. Botón **"Plantillas rápidas"**: crea un formulario precargado (Evento básico: nombre, email, teléfono, documento, ciudad, consentimiento; Clase/curso; Webinar).
 
 Criterios de aceptación:
-- [ ] Se puede crear un formulario con todos los tipos de campo, reordenarlos, configurar opciones y guardar; al recargar se conserva todo.
-- [ ] Un esquema manipulado a mano (tipo inexistente, key duplicada) es rechazado en el servidor con un aviso.
-- [ ] Usuarios sin `tbreg_manage_forms` no acceden.
+- [x] Se puede crear un formulario con todos los tipos de campo, reordenarlos, configurar opciones y guardar; al recargar se conserva todo.
+- [x] Un esquema manipulado a mano (tipo inexistente, key duplicada) es rechazado en el servidor con un aviso.
+- [x] Usuarios sin `tbreg_manage_forms` no acceden.
+
+Verificación de la fase 2 (2026-10-13):
+- Menú ToolsBox Registros, listado `WP_List_Table` con búsqueda, filtro de estado y paginación; shortcode copiable, duplicación, cierre, papelera y restauración como borrador. Las acciones de fila verifican capacidad y nonce específico del formulario y la operación.
+- Constructor con los 15 tipos, tarjetas colapsables, ordenación de campos y opciones con `jquery-ui-sortable`, controles para ordenar con teclado, etiquetas, valores, ayuda, ancho, rol y validación. Pestañas Campos, Configuración, Notificaciones y Publicar; plantillas Evento básico, Clase/curso y Webinar. JS vanilla sin compilación; assets solo en pantallas propias.
+- El servidor aplica `sanitize_title()` a valores autogenerados de opciones nuevas y ajusta sus defaults. Los valores existentes o editados manualmente permanecen estables al cambiar la etiqueta. El guardado POST valida nonce, capacidad, JSON, tipos y ajustes, fechas del evento y destinatarios. Los avisos son transients por usuario, escapados y de un solo uso.
+- Los campos con valores tienen el tipo bloqueado y se archivan al retirarlos. El servidor conserva el historial incluso si se manipula el JSON. Se advierte al editar opciones con datos. Una revisión del contenido editable evita sobrescribir cambios de otro administrador; las nuevas inscripciones no invalidan esa revisión.
+- **`TBREG_RUN_INTEGRATION=1 vendor/bin/phpunit`: 50 tests / 311 assertions**, sin saltos. Incluye todos los tipos y el orden de sus opciones, configuración, claves/tipos/JSON manipulados, autorización, nonces, revisiones, archivo histórico, acciones de fila, plantillas, paginación, HTML escapado, avisos, carga de assets y el handler admin-post (método, nonce, deslasheado y redirección).
+- **8 pruebas DOM de JavaScript** con jsdom de desarrollo y los archivos reales de jQuery UI incluidos en WordPress: creación de los 15 tipos, ordenación, serialización/recarga, valores automáticos y manuales, teclado, archivo histórico, plantillas, opciones repetidas, foco y contenido HTML tratado como texto. El JSON producido por estas pruebas también pasó por el guardado PHP y MySQL y se recargó conservando tipos, orden y opciones.
+- Sintaxis correcta en 17 archivos PHP; PHPCS con WPCS/PHPCompatibilityWP sin errores ni warnings. El ruleset declara las cuatro capacidades ya registradas por el instalador.
+- Activación, desactivación, reactivación, arranque, render del editor/listado y guardado verificados con APIs reales en WordPress 7.1, PHP 8.2.29 y MySQL 9.0.1, con `WP_DEBUG=true`, sin warnings del plugin y conservando datos. Se eliminaron los registros temporales y se restauró la lista de plugins activos.
+- La revisión visual en navegador queda pendiente: Computer Use no dispone de navegador en este entorno. Las pruebas DOM verifican comportamiento y estructura; no sustituyen la comprobación visual del arrastre, el foco y el diseño responsive en un navegador real.
+- Las rutas de Inscripciones, Exportar y Ajustes globales muestran mensajes de disponibilidad futura. Se pueden guardar los ajustes de notificaciones y obtener el shortcode, pero el envío, render público y exportación se implementarán en sus fases correspondientes. Se mantienen las notas UTC y autoload de la revisión de fase 1; el instalador no se ha modificado.
+
+Pruebas reproducibles del constructor (solo desarrollo; jsdom no es dependencia del plugin):
+```bash
+mkdir -p /tmp/tbreg-editor-fixtures
+TBREG_RUN_INTEGRATION=1 TBREG_EDITOR_FIXTURE_DIR=/tmp/tbreg-editor-fixtures vendor/bin/phpunit
+# Usa una instalación de jsdom de desarrollo existente o instálalo fuera del plugin:
+npm install --prefix /tmp/tbreg-js-tests --no-save jsdom@24.1.3
+TBREG_RUN_INTEGRATION=1 TBREG_EDITOR_FIXTURE_DIR=/tmp/tbreg-editor-fixtures TBREG_JSDOM_PATH=/tmp/tbreg-js-tests/node_modules/jsdom node --test tests/JavaScript/builder.test.cjs
+TBREG_RUN_INTEGRATION=1 TBREG_EDITOR_DOM_FIELDS=/tmp/tbreg-editor-fixtures/dom-fields.json vendor/bin/phpunit
+```
+
+#### Correcciones de la revisión visual (Fase 2) — resueltas antes del cierre de la Fase 3
+
+Resueltas el 2026-10-13: controles según tipo con limpieza en cliente/servidor, predeterminados mediante selector o casillas que siguen el catálogo, límites nativos de fecha/hora, paleta y pestañas sin desbordes, acciones compactas y separación del predeterminado. Se añadieron dos pruebas DOM y pruebas PHP de normalización/límites. Se repitió la revisión en Chrome a **1300 px y 375 px** con el HTML del editor generado por PHP y los estilos de WordPress: `scrollWidth === innerWidth` en ambos tamaños. Capturas: [escritorio](qa/fase-3/constructor-1300.jpg) y [móvil](qa/fase-3/constructor-375.jpg). Las observaciones originales se conservan debajo.
+Revisión hecha con capturas en Chrome headless del editor real (estilos del admin de WP + `builder.js`), a 1300 px y 375 px.
+
+1. **Ajustes según el tipo de campo.** Hoy todas las tarjetas muestran los mismos controles. Mostrar solo los que aplican:
+
+   | Tipo | Placeholder | Mín./Máx. | Long. mín./máx. | Patrón | Obligatorio | Valor predeterminado | Rol |
+   |---|---|---|---|---|---|---|---|
+   | text, tel, document, textarea | ✔ | — | ✔ | ✔ (no en textarea) | ✔ | texto | name/document según tipo |
+   | email, url | ✔ | — | ✔ | — | ✔ | texto | email solo en `email` |
+   | number | ✔ | ✔ | — | — | ✔ | número | — |
+   | date, time | — | ✔ (como fecha/hora) | — | — | ✔ | fecha/hora | — |
+   | select, radio | — | — | — | — | ✔ | **`<select>` con las opciones** | — |
+   | checkbox | — | — | — | — | ✔ | **casillas con las opciones** | — |
+   | consent | — | — | — | — | siempre ✔ (deshabilitado) | — | — |
+   | heading | — | — | — | — | — | — | — (solo etiqueta, ayuda y clases CSS) |
+   | hidden | — | — | — | — | — | texto o `{get:param}` | — |
+
+   Al cambiar el tipo, limpiar los valores que ya no aplican antes de serializar. El servidor (`Field::fromArray`) debe ignorar o rechazar esas claves para el tipo correspondiente.
+2. **Valor predeterminado de listas.** En select, radio y checkbox hoy se escribe el *value* a mano (en checkbox, separado por comas). Reemplazarlo por un selector que se alimente de las opciones actuales y se actualice al agregar, renombrar o eliminar opciones.
+3. **Paleta en móvil (≤ 600 px).** Los textos largos ("+ Casillas de selección", "+ Correo electrónico", "+ Título o separador") se salen del borde del botón. Permitir el salto de línea (`white-space: normal; height: auto; line-height: 1.3; padding-block: 6px`) o pasar a una sola columna por debajo de 400 px.
+4. **Pestañas en móvil.** A 375 px las pestañas desbordan unos 5 px ("Publicar" queda cortada). Usar `flex-wrap: wrap` u `overflow-x: auto` en `.tbreg-tabs`.
+5. **Botones Subir/Bajar/Eliminar de las opciones.** En escritorio ocupan una fila completa bajo cada opción. Ponerlos en línea a la derecha de "Valor guardado" (botones de icono con `aria-label`) para que la lista de opciones sea compacta.
+6. **"Agregar opción" y "Valor predeterminado"** quedan pegados; añadir separación (`margin-top: 16px`).
+
+Criterio de aceptación: repetir las capturas a 1300 px y 375 px sin desbordes horizontales, y agregar pruebas DOM de los puntos 1 y 2.
 
 ### Fase 3 — Render público y envío
 **Objetivo:** el formulario funciona en el frontend y guarda inscripciones.
+
+Decisiones de implementación de fase 3:
+- El instalador exige InnoDB para las tres tablas. Si se cambia su motor externamente, el envío público se bloqueará: `GET_LOCK` puede serializar cupos en MyISAM, pero no permite revertir atómicamente una inscripción y sus valores si falla una escritura. Se conserva la garantía de rollback en lugar de habilitar ese respaldo parcial.
+- `FieldTypeInterface::render()` admite un tercer contexto opcional para los IDs únicos, los errores accesibles y el texto de consentimiento; las llamadas con dos argumentos siguen funcionando. `hidden` añade `query_param` opcional al esquema para mapear explícitamente UTM u otro parámetro GET, sin modificar la clave inmutable del campo.
+- Los transients del límite de intentos y los resultados PRG usan el backend de opciones de WordPress, incluso si hay caché externa: un drop-in residual de LiteSpeed en este entorno trataba el frontend como caché externa sin persistencia y el admin como almacenamiento en BD. Se normaliza solo el almacenamiento del plugin, sin modificar el drop-in ni la configuración del sitio; las opciones son temporales y no se precargan. Se limpian al consumirlas o mediante el mantenimiento diario `wp_scheduled_delete`, también con caché externa, sin crear otra tarea cron.
 
 Tareas:
 1. `FormRenderer` + `templates/` (sobrescribibles desde `{tema}/toolsbox-registros/`). HTML semántico y accesible: `<label for>`, `aria-required`, `aria-describedby` para la ayuda y los errores, grid responsive según `width`.
@@ -385,14 +440,30 @@ Tareas:
 5. Mensajes de "inscripciones cerradas", "cupo lleno" y "aún no abre", con plantillas propias.
 
 Criterios de aceptación:
-- [ ] Inscripción exitosa con y sin JavaScript.
-- [ ] Los campos obligatorios, el formato de email, las opciones fuera del catálogo y el min/max se rechazan en el servidor aunque se salte la validación del navegador.
-- [ ] Con cupo = 2, la tercera inscripción se bloquea (o entra en lista de espera si está activada).
-- [ ] La prevención de duplicados por email/documento funciona.
-- [ ] Pasa una revisión básica de accesibilidad (navegación con teclado, labels y foco al primer error).
+- [x] Inscripción exitosa con y sin JavaScript.
+- [x] Los campos obligatorios, el formato de email, las opciones fuera del catálogo y el min/max se rechazan en el servidor aunque se salte la validación del navegador.
+- [x] Con cupo = 2, la tercera inscripción se bloquea (o entra en lista de espera si está activada).
+- [x] La prevención de duplicados por email/documento funciona.
+- [x] Pasa una revisión básica de accesibilidad (navegación con teclado, labels y foco al primer error).
+
+Verificación del 2026-10-13:
+- `TBREG_RUN_INTEGRATION=1`: **103 pruebas PHP / 788 aserciones**, sin saltos. Integración con MySQL real en tablas de prefijo aleatorio que se eliminan al terminar. Incluye catálogos, formatos, rangos numéricos y de fecha/hora, roles compatibles, consentimiento sin selección inicial, duplicados, cupos/lista de espera, login, borradores, fechas locales, cambios de esquema/estado entre validación y escritura, API REST y permisos.
+- **18 pruebas JavaScript DOM** (10 constructor + 8 frontend), con `TBREG_RUN_INTEGRATION=1`, fixtures PHP reales y jQuery UI de WordPress. Verifican envío, arrays, errores/foco, teclado del constructor, doble envío, fallo de red, mensajes escapados e IDs/labels/referencias accesibles en varias instancias.
+- Prueba HTTP real en WordPress local: POST inválido → 303 con valores privados y mensaje de un solo uso; éxito REST → 201; email duplicado → 409; éxito POST sin JS; cupo 2 rechaza la tercera inscripción → 409; listado REST anónimo → 401. Los datos temporales de prueba se eliminaron al finalizar.
+- Chrome conectado: inscripción por teclado con JavaScript, validación nativa y email `a@b` aceptado por el navegador pero rechazado por el servidor, foco en el primer error y mensaje de éxito sin recarga. [Éxito](qa/fase-3/envio-exitoso.jpg), [formulario móvil](qa/fase-3/formulario-375.jpg) y [error del servidor](qa/fase-3/error-servidor-375.jpg). Sin desbordes a 375 px; constructor revisado también a 1300 px.
+- WPCS/PHPCompatibility sin errores en 65 archivos; sintaxis válida en 70 archivos PHP y 3 JavaScript. Callbacks reales de activación, desactivación y reactivación ejecutados con `WP_DEBUG`: formulario y cuatro inscripciones HTTP/Chrome conservados, sin avisos del plugin. No se cambió la configuración del sitio.
+- Se verifica el rechazo seguro si una tabla deja de usar InnoDB; no se habilita un respaldo MyISAM con escrituras parciales. Los contadores antispam están serializados con `GET_LOCK`. Pruebas de regresión cubren el drop-in de caché no persistente del entorno y la limpieza de temporales vencidos, conservando los vigentes y los de otros componentes, sin modificar ese drop-in.
+- Turnstile/reCAPTCHA v2: configuración protegida por capacidad y nonce, secretos fuera del HTML y respuestas simuladas del proveedor (incluido hostname incorrecto). La comprobación con claves reales queda para QA de fase 8. Referencias: [Turnstile](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/) y [reCAPTCHA](https://developers.google.com/recaptcha/docs/verify).
+- Sin dependencias de runtime ni compilación JS; el instalador no cambió y se conservan las notas pendientes de Fase 1 sobre UTC y autoload.
 
 ### Fase 4 — Gestión de inscripciones (admin)
 **Objetivo:** consultar y administrar los inscritos.
+
+Decisiones de implementación de Fase 4:
+- La acción «Exportar seleccionados» prepara una selección protegida por nonce, capacidad y formulario. La descarga XLSX/CSV se implementa en Fase 5, junto con los escritores; en esta fase la pantalla muestra la selección preparada.
+- Las fechas del filtro son días de la zona horaria del sitio, convertidos a límites UTC inclusivos con `get_gmt_from_date()`.
+- La edición cambia solo los campos activos modificados y valida esos cambios contra el esquema actual. Los campos archivados, el consentimiento y los ocultos permanecen de solo lectura; los valores antiguos sin cambios se conservan aunque haya cambiado el catálogo o la obligatoriedad. Una revisión detecta cambios simultáneos en inscripción o esquema.
+
 
 Tareas:
 1. `EntriesListTable`: filtro por formulario (obligatorio para ver columnas dinámicas; sin filtro muestra columnas genéricas: formulario, nombre, email, fecha, estado), por estado y por rango de fechas, y búsqueda por email/documento/nombre. Paginación.
@@ -402,8 +473,18 @@ Tareas:
 5. Mantener `entries_count` sincronizado al crear, eliminar o cancelar.
 
 Criterios de aceptación:
-- [ ] Con 1.000 inscripciones de prueba el listado carga en menos de 1 s (índices correctos).
-- [ ] Los cambios de estado y eliminaciones actualizan el contador de cupos.
+- [x] Con 1.000 inscripciones de prueba el listado carga en menos de 1 s (índices correctos).
+- [x] Los cambios de estado y eliminaciones actualizan el contador de cupos.
+
+Verificación del 2026-10-13:
+- `TBREG_RUN_INTEGRATION=1`: **117 pruebas PHP / 925 aserciones**, sin saltos. Incluye permisos de consulta/edición/exportación, nonces, IDs y pertenencia a formulario, cambios masivos con errores parciales comunicados, borrado confirmado, cupos, rollback, duplicados, historial y revisiones de inscripción/esquema.
+- **20 pruebas DOM JavaScript** (10 constructor + 8 frontend + 2 administración), con integración activa y fixtures de PHP. Verifican IDs únicos, labels/referencias accesibles, separación entre filtros GET y acciones POST, un único botón de expansión por fila y campos históricos de solo lectura.
+- Con **1.000 inscripciones**, la carga y el render de la pantalla del plugin tardaron **0.003165 s** y usaron **6 consultas** a sus tablas, incluida la lista de formularios. Se mide `EntriesPage::load()` + `render()` con MySQL local y WordPress ya arrancado. [Medición](qa/fase-4/benchmark.json). Formularios y valores se cargan por lote, sin consultas por fila.
+- Las fechas elegidas en `America/Bogota` se convierten a UTC: el día `2026-10-13` corresponde a `2026-10-13 05:00:00` hasta `2026-10-14 04:59:59`. Se prueban ambos límites y los registros justo fuera del intervalo. El instalador y la nota pendiente de autoload permanecen sin cambios.
+- HTTP local sobre tablas ficticias aisladas: POST + PRG para confirmar/cancelar, nonce inválido → 403, GET de acciones → 405, revisión y confirmación de borrado, detalle borrado → 404, selección privada para exportar y contador final correcto. Activación/desactivación/reactivación reales con `WP_DEBUG`: sin avisos del plugin y datos existentes conservados. Las tablas de QA se eliminan al finalizar.
+- Chrome conectado: [listado de escritorio](qa/fase-4/listado-1300.jpg), [móvil](qa/fase-4/listado-375.jpg), [Opciones de pantalla](qa/fase-4/opciones-pantalla.jpg), [detalle](qa/fase-4/detalle-1300.jpg), [edición exitosa](qa/fase-4/edicion-exitosa.jpg) y [error accesible](qa/fase-4/error-edicion.jpg). Listado y detalle sin desbordes a 375 px, expansión nativa de filas, nombres visibles en móvil, columna archivada configurable y foco en el primer error del servidor. Las preferencias de columnas nativas se verifican también en integración.
+- WPCS/PHPCompatibility sin errores en 69 archivos; sintaxis válida en 75 PHP, 3 scripts JS y 3 pruebas CJS. No hay dependencias nuevas de runtime, migraciones ni cambios en `wp-config.php`.
+- La selección de exportación caduca a los diez minutos y está ligada al usuario; los errores de edición se guardan cinco minutos y se consumen una vez. Ambos usan el almacenamiento temporal coherente de Fase 3 y su limpieza diaria. Los escritores y la descarga se mantienen en Fase 5.
 
 ### Fase 5 — Exportación a Excel
 **Objetivo:** descarga del registro de inscritos por formulario.
@@ -485,9 +566,9 @@ Criterios de aceptación:
 |---|---|---|
 | 0 Andamiaje | ✅ Completada | Sintaxis, WPCS, metadatos y callbacks verificados. Activación, desactivación y reactivación probadas contra la BD local (MySQL de `/usr/local/mysql`, puerto 3306) sin warnings con `WP_DEBUG`. |
 | 1 Datos | ✅ Completada | Tres tablas InnoDB, capacidades, migraciones, entidades y repositorios. 39 tests / 188 assertions; activación y conservación de datos verificadas. |
-| 2 Constructor | ⬜ Pendiente | |
-| 3 Frontend/envío | ⬜ Pendiente | |
-| 4 Inscripciones | ⬜ Pendiente | |
+| 2 Constructor | ✅ Completada | Ajustes de la revisión visual resueltos; controles por tipo, predeterminados de listas y diseño responsive verificados en Chrome a 1300/375 px. 10 pruebas DOM del constructor; capturas en `docs/qa/fase-3/`. |
+| 3 Frontend/envío | ✅ Completada | Shortcode/bloque, 15 tipos, POST/REST, validación, cupos, fechas, duplicados y antispam. 103 PHP / 788 aserciones con integración activa + 18 DOM; HTTP real, teclado/foco y responsive en Chrome; activación/reactivación sin avisos. Captcha real pendiente de QA; requiere InnoDB. |
+| 4 Inscripciones | ✅ Completada | Filtros locales→UTC, columnas y opciones de pantalla, detalle/edición con historial y revisiones, acciones masivas y cupos. 117 PHP / 925 aserciones con integración activa + 20 DOM; 1.000 inscritos en 0.003165 s con 6 consultas; HTTP, Chrome y reactivación verificados. Selección de exportación lista; descarga en Fase 5. |
 | 5 Exportación | ⬜ Pendiente | |
 | 6 Notificaciones | ⬜ Pendiente | |
 | 7 Privacidad/hardening | ⬜ Pendiente | |

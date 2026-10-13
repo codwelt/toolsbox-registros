@@ -1,0 +1,13 @@
+{
+  "apiVersion": 2,
+  "name": "codwelt/toolsbox-registro",
+  "title": "ToolsBox Registros",
+  "category": "widgets",
+  "icon": "clipboard",
+  "description": "Formulario de inscripción para eventos, clases y seminarios.",
+  "textdomain": "toolsbox-registros",
+  "attributes": { "formId": { "type": "integer", "default": 0 } },
+  "supports": { "html": false, "multiple": true },
+  "editorScript": "tbreg-block",
+  "editorStyle": "tbreg-form"
+}

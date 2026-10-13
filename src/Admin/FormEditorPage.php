@@ -1,0 +1,444 @@
+<?php
+/**
+ * Constructor de formularios y guardado autenticado.
+ *
+ * @package ToolsBoxRegistros
+ */
+
+declare(strict_types=1);
+
+namespace Codwelt\ToolsBoxRegistros\Admin;
+
+use Codwelt\ToolsBoxRegistros\Domain\Form;
+use Codwelt\ToolsBoxRegistros\Repository\FormRepository;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Valida las peticiones y renderiza el editor sin paso de compilación.
+ */
+final class FormEditorPage {
+	/**
+	 * Repositorio de formularios.
+	 *
+	 * @var FormRepository
+	 */
+	private FormRepository $forms;
+
+	/**
+	 * Inicializa el repositorio del editor.
+	 *
+	 * @param FormRepository|null $forms Repositorio opcional para pruebas.
+	 */
+	public function __construct( ?FormRepository $forms = null ) {
+		$this->forms = $forms ?? new FormRepository();
+	}
+
+	/**
+	 * Valida autorización, nonce y esquema antes de persistir el formulario.
+	 *
+	 * @param array<string,mixed> $input Entrada ya deslasheada.
+	 * @return Form|\WP_Error
+	 */
+	public function save( array $input ): Form|\WP_Error {
+		if ( ! current_user_can( 'tbreg_manage_forms' ) ) {
+			return new \WP_Error( 'tbreg_forbidden', __( 'No tienes permiso para administrar formularios.', 'toolsbox-registros' ) );
+		}
+		if ( ! isset( $input['tbreg_nonce'] ) || ! is_string( $input['tbreg_nonce'] ) || ! wp_verify_nonce( $input['tbreg_nonce'], 'tbreg_save_form' ) ) {
+			return new \WP_Error( 'tbreg_invalid_nonce', __( 'La sesión del formulario ha caducado. Recarga la página e inténtalo de nuevo.', 'toolsbox-registros' ) );
+		}
+		try {
+			foreach ( array( 'tbreg_id', 'tbreg_title', 'tbreg_slug', 'tbreg_description', 'tbreg_status', 'tbreg_fields', 'tbreg_revision' ) as $name ) {
+				if ( isset( $input[ $name ] ) && ! is_string( $input[ $name ] ) ) {
+					return new \WP_Error( 'tbreg_invalid_data', __( 'El formulario contiene un valor no permitido.', 'toolsbox-registros' ) );
+				}
+			}
+			$id = filter_var( $input['tbreg_id'] ?? '0', FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 0 ) ) );
+			if ( false === $id || ( $id > 0 && ! preg_match( '/^[a-f0-9]{64}$/D', $input['tbreg_revision'] ?? '' ) ) ) {
+				return new \WP_Error( 'tbreg_invalid_data', __( 'El identificador o la revisión del formulario no es válido. Recarga la página.', 'toolsbox-registros' ) );
+			}
+			$json = $input['tbreg_fields'] ?? '[]';
+			if ( strlen( $json ) > 1048576 ) {
+				return new \WP_Error( 'tbreg_too_large', __( 'La definición del formulario es demasiado grande.', 'toolsbox-registros' ) );
+			}
+			$fields = json_decode( $json, true, 64, JSON_THROW_ON_ERROR );
+			if ( ! str_starts_with( ltrim( $json ), '[' ) || ! is_array( $fields ) || array_values( $fields ) !== $fields ) {
+				return new \WP_Error( 'tbreg_invalid_data', __( 'Los campos deben ser una lista ordenada.', 'toolsbox-registros' ) );
+			}
+			// Solo las opciones recién creadas y no editadas generan su valor desde la etiqueta.
+			foreach ( $fields as &$field ) {
+				if ( ! is_array( $field ) ) {
+					return new \WP_Error( 'tbreg_invalid_data', __( 'La definición de un campo no es válida.', 'toolsbox-registros' ) );
+				}
+				$remap = array();
+				if ( isset( $field['options'] ) && is_array( $field['options'] ) ) {
+					foreach ( $field['options'] as &$option ) {
+						if ( is_array( $option ) && true === ( $option['auto'] ?? false ) && isset( $option['label'], $option['value'] ) && is_string( $option['label'] ) && is_string( $option['value'] ) ) {
+							$generated                 = sanitize_title( $option['label'] );
+							$remap[ $option['value'] ] = $generated;
+							$option['value']           = $generated;
+						}
+					}
+					unset( $option );
+				}
+				$default = $field['default'] ?? '';
+				if ( is_scalar( $default ) && isset( $remap[ (string) $default ] ) ) {
+					$field['default'] = $remap[ (string) $default ];
+				} elseif ( is_array( $default ) ) {
+					$field['default'] = array_map( static fn ( mixed $value ): mixed => is_scalar( $value ) ? ( $remap[ (string) $value ] ?? $value ) : $value, $default );
+				}
+				if ( 'consent' === ( $field['type'] ?? '' ) ) {
+					$field['required'] = true;
+				}
+			}
+			unset( $field );
+			$form = Form::fromArray(
+				array(
+					'id'          => $id,
+					'title'       => $input['tbreg_title'] ?? '',
+					'slug'        => $input['tbreg_slug'] ?? '',
+					'description' => $input['tbreg_description'] ?? '',
+					'status'      => $input['tbreg_status'] ?? 'draft',
+					'fields'      => $fields,
+					'settings'    => $this->settings_input( $input['tbreg_settings'] ?? array() ),
+				)
+			);
+			return $this->forms->save( $form, $id > 0 ? $input['tbreg_revision'] : null );
+		} catch ( \JsonException $exception ) {
+			return new \WP_Error( 'tbreg_invalid_json', __( 'El esquema JSON está mal formado. El formulario anterior se ha conservado.', 'toolsbox-registros' ) );
+		} catch ( \InvalidArgumentException $exception ) {
+			return new \WP_Error( 'tbreg_invalid_data', $exception->getMessage() );
+		} catch ( \RuntimeException $exception ) {
+			return new \WP_Error( 'tbreg_db_error', __( 'No se pudo guardar el formulario. Inténtalo de nuevo.', 'toolsbox-registros' ) );
+		}
+	}
+
+	/**
+	 * Convierte exclusivamente controles HTML conocidos a los tipos del esquema.
+	 *
+	 * @param mixed $raw Ajustes recibidos.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException Si un control contiene datos inválidos.
+	 */
+	private function settings_input( mixed $raw ): array {
+		if ( ! is_array( $raw ) ) {
+			throw new \InvalidArgumentException( esc_html__( 'La configuración no es válida.', 'toolsbox-registros' ) );
+		}
+		foreach ( array( 'event', 'notify_admin', 'confirm_attendee' ) as $name ) {
+			if ( isset( $raw[ $name ] ) && ! is_array( $raw[ $name ] ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'La configuración del evento o las notificaciones no es válida.', 'toolsbox-registros' ) );
+			}
+		}
+		foreach ( array( 'waitlist', 'require_login' ) as $name ) {
+			$value = $raw[ $name ] ?? '0';
+			if ( ! in_array( $value, array( '0', '1', false, true ), true ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'Una opción de configuración no es válida.', 'toolsbox-registros' ) );
+			}
+			$raw[ $name ] = '1' === $value || true === $value;
+		}
+		$capacity = filter_var(
+			$raw['capacity'] ?? '0',
+			FILTER_VALIDATE_INT,
+			array(
+				'options' => array(
+					'min_range' => 0,
+					'max_range' => 4294967295,
+				),
+			)
+		);
+		if ( false === $capacity ) {
+			throw new \InvalidArgumentException( esc_html__( 'El cupo debe ser un entero no negativo.', 'toolsbox-registros' ) );
+		}
+		$raw['capacity'] = $capacity;
+		foreach ( array( 'notify_admin', 'confirm_attendee' ) as $name ) {
+			$value = $raw[ $name ]['enabled'] ?? '0';
+			if ( ! in_array( $value, array( '0', '1', false, true ), true ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'La notificación no es válida.', 'toolsbox-registros' ) );
+			}
+			$raw[ $name ]['enabled'] = '1' === $value || true === $value;
+		}
+		foreach ( array( 'starts_at', 'ends_at' ) as $name ) {
+			$value = $raw['event'][ $name ] ?? '';
+			if ( ! is_string( $value ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'La fecha del evento no es válida.', 'toolsbox-registros' ) );
+			}
+			if ( '' !== $value ) {
+				$value = str_replace( 'T', ' ', $value );
+				$value = 16 === strlen( $value ) ? $value . ':00' : $value;
+				$date  = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $value, wp_timezone() );
+				if ( false === $date || $date->format( 'Y-m-d H:i:s' ) !== $value ) {
+					throw new \InvalidArgumentException( esc_html__( 'La fecha del evento no es válida.', 'toolsbox-registros' ) );
+				}
+			}
+			$raw['event'][ $name ] = $value;
+		}
+		if ( '' !== $raw['event']['starts_at'] && '' !== $raw['event']['ends_at'] && $raw['event']['starts_at'] > $raw['event']['ends_at'] ) {
+			throw new \InvalidArgumentException( esc_html__( 'El fin del evento no puede preceder al inicio.', 'toolsbox-registros' ) );
+		}
+		$recipients = $raw['notify_admin']['to'] ?? '';
+		if ( ! is_string( $recipients ) ) {
+			throw new \InvalidArgumentException( esc_html__( 'Los destinatarios no son válidos.', 'toolsbox-registros' ) );
+		}
+		if ( '' !== trim( $recipients ) ) {
+			foreach ( explode( ',', $recipients ) as $recipient ) {
+				if ( ! is_email( trim( $recipient ) ) ) {
+					throw new \InvalidArgumentException( esc_html__( 'Revisa los correos de los destinatarios.', 'toolsbox-registros' ) );
+				}
+			}
+		}
+		return $raw;
+	}
+
+	/**
+	 * Atiende el POST autenticado y redirige a una pantalla propia.
+	 *
+	 * @return void
+	 */
+	public function handle_save(): void {
+		Menu::require_access( 'tbreg_manage_forms' );
+		if ( ! isset( $_SERVER['REQUEST_METHOD'] ) || 'POST' !== $_SERVER['REQUEST_METHOD'] ) {
+			wp_die( esc_html__( 'El guardado requiere una petición POST.', 'toolsbox-registros' ), '', array( 'response' => 405 ) );
+		}
+		check_admin_referer( 'tbreg_save_form', 'tbreg_nonce' );
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- save() valida estructura, tipos y cadenas antes de persistir.
+		$input  = wp_unslash( $_POST );
+		$result = $this->save( $input );
+		$id     = is_wp_error( $result ) ? ( isset( $input['tbreg_id'] ) && is_string( $input['tbreg_id'] ) ? absint( $input['tbreg_id'] ) : 0 ) : $result->id();
+		$token  = Notices::put( is_wp_error( $result ) ? $result->get_error_message() : __( 'Formulario guardado.', 'toolsbox-registros' ), is_wp_error( $result ) );
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'         => 'toolsbox-registros-edit',
+					'id'           => $id,
+					'tbreg_notice' => $token,
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Obtiene el estado autorizado para render y assets del editor.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function context(): array {
+		Menu::require_access( 'tbreg_manage_forms' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Selector de lectura; ninguna escritura.
+		$id   = isset( $_GET['id'] ) && is_scalar( $_GET['id'] ) ? absint( $_GET['id'] ) : 0;
+		$form = $id > 0 ? $this->forms->find( $id ) : null;
+		if ( $id > 0 && null === $form ) {
+			wp_die( esc_html__( 'El formulario no existe.', 'toolsbox-registros' ), '', array( 'response' => 404 ) );
+		}
+		$data = null !== $form ? $form->toArray() : Form::fromArray( array( 'title' => __( 'Nuevo formulario', 'toolsbox-registros' ) ) )->toArray();
+		if ( null === $form ) {
+			$data['title'] = '';
+		}
+		return array(
+			'data'     => $data,
+			'revision' => null !== $form ? $form->revision() : '',
+			'used'     => $id > 0 ? $this->forms->usedFieldKeys( $id ) : array(),
+		);
+	}
+
+	/**
+	 * Renderiza las pestañas y los controles de configuración.
+	 *
+	 * @return void
+	 */
+	public function render(): void {
+		$context  = $this->context();
+		$data     = $context['data'];
+		$settings = $data['settings'];
+		?>
+		<div class="wrap tbreg-admin">
+			<h1><?php echo esc_html( $data['id'] > 0 ? __( 'Editar formulario', 'toolsbox-registros' ) : __( 'Crear formulario', 'toolsbox-registros' ) ); ?></h1>
+			<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=toolsbox-registros' ) ); ?>">&larr; <?php esc_html_e( 'Volver a formularios', 'toolsbox-registros' ); ?></a></p>
+			<?php Notices::render(); ?>
+			<noscript><div class="notice notice-warning"><p><?php esc_html_e( 'Activa JavaScript para agregar y ordenar campos. Puedes editar los datos y la configuración del formulario existente.', 'toolsbox-registros' ); ?></p></div></noscript>
+			<div id="tbreg-builder-error" class="notice notice-error" role="alert" hidden><p></p></div>
+			<form id="tbreg-editor" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
+				<input type="hidden" name="action" value="tbreg_save_form">
+				<input type="hidden" name="tbreg_id" value="<?php echo esc_attr( (string) $data['id'] ); ?>">
+				<input type="hidden" name="tbreg_revision" value="<?php echo esc_attr( $context['revision'] ); ?>">
+				<input type="hidden" id="tbreg-fields-json" name="tbreg_fields" value="<?php echo esc_attr( (string) wp_json_encode( $data['fields'] ) ); ?>">
+				<?php wp_nonce_field( 'tbreg_save_form', 'tbreg_nonce' ); ?>
+				<label class="tbreg-title-label" for="tbreg-title"><?php esc_html_e( 'Nombre del formulario', 'toolsbox-registros' ); ?></label>
+				<input id="tbreg-title" name="tbreg_title" type="text" class="large-text tbreg-title" maxlength="200" value="<?php echo esc_attr( $data['title'] ); ?>" required>
+				<div class="tbreg-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Editor del formulario', 'toolsbox-registros' ); ?>">
+					<?php
+					foreach ( array(
+						'fields'        => __( 'Campos', 'toolsbox-registros' ),
+						'settings'      => __( 'Configuración', 'toolsbox-registros' ),
+						'notifications' => __( 'Notificaciones', 'toolsbox-registros' ),
+						'publish'       => __( 'Publicar', 'toolsbox-registros' ),
+					) as $key => $label ) :
+						?>
+						<button type="button" role="tab" id="tbreg-tab-<?php echo esc_attr( $key ); ?>" aria-controls="tbreg-panel-<?php echo esc_attr( $key ); ?>" aria-selected="<?php echo 'fields' === $key ? 'true' : 'false'; ?>" tabindex="<?php echo 'fields' === $key ? '0' : '-1'; ?>" data-tab="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></button>
+					<?php endforeach; ?>
+				</div>
+				<section id="tbreg-panel-fields" role="tabpanel" aria-labelledby="tbreg-tab-fields" class="tbreg-panel">
+					<div class="tbreg-builder-layout">
+						<aside class="tbreg-palette" aria-label="<?php esc_attr_e( 'Agregar campos', 'toolsbox-registros' ); ?>">
+							<h2><?php esc_html_e( 'Agregar un campo', 'toolsbox-registros' ); ?></h2>
+							<?php foreach ( Templates::types() as $type => $label ) : ?>
+								<button type="button" class="button tbreg-add-field" data-type="<?php echo esc_attr( $type ); ?>">+ <?php echo esc_html( $label ); ?></button>
+							<?php endforeach; ?>
+							<h3><?php esc_html_e( 'Plantillas rápidas', 'toolsbox-registros' ); ?></h3>
+							<label class="screen-reader-text" for="tbreg-template"><?php esc_html_e( 'Elegir plantilla', 'toolsbox-registros' ); ?></label>
+							<select id="tbreg-template">
+							<?php
+							foreach ( Templates::all() as $name => $template ) :
+								?>
+								<option value="<?php echo esc_attr( $name ); ?>"><?php echo esc_html( $template['label'] ); ?></option><?php endforeach; ?></select>
+							<button type="button" class="button" id="tbreg-apply-template"><?php esc_html_e( 'Usar plantilla', 'toolsbox-registros' ); ?></button>
+						</aside>
+						<div class="tbreg-canvas">
+							<p class="description"><?php esc_html_e( 'Arrastra el asa de un campo para ordenarlo o usa las flechas para moverlo con el teclado.', 'toolsbox-registros' ); ?></p>
+							<p id="tbreg-fields-empty" class="tbreg-empty"><?php esc_html_e( 'Agrega tu primer campo o elige una plantilla para empezar.', 'toolsbox-registros' ); ?></p>
+							<ul id="tbreg-fields" aria-label="<?php esc_attr_e( 'Campos activos', 'toolsbox-registros' ); ?>"></ul>
+							<section id="tbreg-archived" hidden><h2><?php esc_html_e( 'Campos archivados', 'toolsbox-registros' ); ?></h2><p class="description"><?php esc_html_e( 'Sus valores anteriores se conservan para las inscripciones y la exportación.', 'toolsbox-registros' ); ?></p><ul></ul></section>
+						</div>
+					</div>
+				</section>
+				<section id="tbreg-panel-settings" role="tabpanel" aria-labelledby="tbreg-tab-settings" class="tbreg-panel tbreg-settings-grid" hidden>
+					<?php
+					$this->control( 'tbreg_description', __( 'Descripción', 'toolsbox-registros' ), $data['description'], 'textarea' );
+					foreach ( array(
+						'name'      => __( 'Nombre del evento', 'toolsbox-registros' ),
+						'location'  => __( 'Lugar o enlace del evento', 'toolsbox-registros' ),
+						'starts_at' => __( 'Inicio del evento', 'toolsbox-registros' ),
+						'ends_at'   => __( 'Fin del evento', 'toolsbox-registros' ),
+					) as $key => $label ) {
+						$this->control( 'tbreg_settings[event][' . $key . ']', $label, $settings['event'][ $key ], str_ends_with( $key, '_at' ) ? 'datetime-local' : 'text' );
+					}
+					$this->select_control(
+						'tbreg_settings[event][modality]',
+						__( 'Modalidad', 'toolsbox-registros' ),
+						$settings['event']['modality'],
+						array(
+							'presencial' => __( 'Presencial', 'toolsbox-registros' ),
+							'virtual'    => __( 'Virtual', 'toolsbox-registros' ),
+							'hibrido'    => __( 'Híbrido', 'toolsbox-registros' ),
+						)
+					);
+					$this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo (0 = ilimitado)', 'toolsbox-registros' ), (string) $settings['capacity'], 'number' );
+					$this->control( 'tbreg_settings[opens_at]', __( 'Apertura de inscripciones', 'toolsbox-registros' ), $settings['opens_at'], 'datetime-local' );
+					$this->control( 'tbreg_settings[closes_at]', __( 'Cierre de inscripciones', 'toolsbox-registros' ), $settings['closes_at'], 'datetime-local' );
+					$this->select_control(
+						'tbreg_settings[prevent_duplicates]',
+						__( 'Control de duplicados', 'toolsbox-registros' ),
+						$settings['prevent_duplicates'],
+						array(
+							'none'     => __( 'Sin control', 'toolsbox-registros' ),
+							'email'    => __( 'Por correo principal', 'toolsbox-registros' ),
+							'document' => __( 'Por documento principal', 'toolsbox-registros' ),
+						)
+					);
+					$this->select_control( 'tbreg_settings[default_status]', __( 'Estado inicial', 'toolsbox-registros' ), $settings['default_status'], FormsListTable::entry_statuses() );
+					$this->control( 'tbreg_settings[submit_label]', __( 'Texto del botón de envío', 'toolsbox-registros' ), $settings['submit_label'] );
+					$this->control( 'tbreg_settings[success_message]', __( 'Mensaje de éxito', 'toolsbox-registros' ), $settings['success_message'], 'textarea' );
+					$this->control( 'tbreg_settings[redirect_url]', __( 'Redirección después de inscribirse', 'toolsbox-registros' ), $settings['redirect_url'], 'url' );
+					$this->control( 'tbreg_settings[consent_text]', __( 'Texto de autorización de tratamiento de datos', 'toolsbox-registros' ), $settings['consent_text'], 'textarea' );
+					$this->checkbox_control( 'tbreg_settings[waitlist]', __( 'Permitir lista de espera cuando se complete el cupo', 'toolsbox-registros' ), $settings['waitlist'] );
+					$this->checkbox_control( 'tbreg_settings[require_login]', __( 'Requerir inicio de sesión para inscribirse', 'toolsbox-registros' ), $settings['require_login'] );
+					?>
+					<?php
+					$this->select_control(
+						'tbreg_settings[captcha]',
+						__( 'Verificación antispam adicional', 'toolsbox-registros' ),
+						$settings['captcha'],
+						array(
+							'none'      => __( 'Sin captcha adicional', 'toolsbox-registros' ),
+							'turnstile' => __( 'Cloudflare Turnstile', 'toolsbox-registros' ),
+							'recaptcha' => __( 'Google reCAPTCHA v2', 'toolsbox-registros' ),
+						)
+					);
+					?>
+					/* translators: Marcadores numéricos: cantidades o identificadores; %s: zona horaria del sitio. */
+					<p class="description tbreg-full"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Las fechas de este formulario se configuran en la zona horaria del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?></p>
+				</section>
+				<section id="tbreg-panel-notifications" role="tabpanel" aria-labelledby="tbreg-tab-notifications" class="tbreg-panel tbreg-settings-grid" hidden>
+					<?php
+					$this->checkbox_control( 'tbreg_settings[notify_admin][enabled]', __( 'Avisar al administrador', 'toolsbox-registros' ), $settings['notify_admin']['enabled'] );
+					$this->control( 'tbreg_settings[notify_admin][to]', __( 'Destinatarios (correos separados por coma)', 'toolsbox-registros' ), $settings['notify_admin']['to'] );
+					$this->control( 'tbreg_settings[notify_admin][subject]', __( 'Asunto para el administrador', 'toolsbox-registros' ), $settings['notify_admin']['subject'] );
+					$this->checkbox_control( 'tbreg_settings[confirm_attendee][enabled]', __( 'Confirmar al inscrito por correo', 'toolsbox-registros' ), $settings['confirm_attendee']['enabled'] );
+					$this->control( 'tbreg_settings[confirm_attendee][subject]', __( 'Asunto para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['subject'] );
+					$this->control( 'tbreg_settings[confirm_attendee][body]', __( 'Mensaje para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['body'], 'textarea' );
+					?>
+					<p class="description tbreg-full"><?php esc_html_e( 'Puedes usar {field:KEY}, {event_name} y {entry_id}. El envío de correos estará disponible en una próxima actualización.', 'toolsbox-registros' ); ?></p>
+				</section>
+				<section id="tbreg-panel-publish" role="tabpanel" aria-labelledby="tbreg-tab-publish" class="tbreg-panel tbreg-settings-grid" hidden>
+					<?php
+					$this->select_control( 'tbreg_status', __( 'Estado del formulario', 'toolsbox-registros' ), $data['status'], FormsListTable::form_statuses() );
+					$this->control( 'tbreg_slug', __( 'Slug', 'toolsbox-registros' ), $data['slug'] );
+					?>
+					<div class="tbreg-full"><h2><?php esc_html_e( 'Shortcode', 'toolsbox-registros' ); ?></h2>
+						<?php if ( $data['id'] > 0 ) : ?>
+							<input type="text" id="tbreg-shortcode" class="regular-text" aria-label="<?php esc_attr_e( 'Shortcode del formulario', 'toolsbox-registros' ); ?>" readonly value="<?php echo esc_attr( '[toolsbox_registro id="' . $data['id'] . '"]' ); ?>">
+							<button type="button" class="button" data-tbreg-copy="tbreg-shortcode"><?php esc_html_e( 'Copiar', 'toolsbox-registros' ); ?></button>
+						<?php else : ?>
+							<p><?php esc_html_e( 'Guarda el formulario para obtener su shortcode.', 'toolsbox-registros' ); ?></p>
+						<?php endif; ?>
+						<p class="description"><?php esc_html_e( 'Publica el formulario para recibir inscripciones e inserta este shortcode o el bloque ToolsBox Registros en una página.', 'toolsbox-registros' ); ?></p>
+					</div>
+				</section>
+				<div class="tbreg-save-bar"><button type="submit" class="button button-primary button-large"><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span id="tbreg-builder-status" role="status" aria-live="polite"></span></div>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Renderiza un control de texto con etiqueta asociada.
+	 *
+	 * @param string $name Nombre interno.
+	 * @param string $label Etiqueta visible.
+	 * @param string $value Valor guardado.
+	 * @param string $type Tipo de control.
+	 * @return void
+	 */
+	private function control( string $name, string $label, string $value, string $type = 'text' ): void {
+		echo '<label class="tbreg-control"><span>' . esc_html( $label ) . '</span>';
+		if ( 'textarea' === $type ) {
+			echo '<textarea name="' . esc_attr( $name ) . '" rows="4">' . esc_textarea( $value ) . '</textarea>';
+		} else {
+			$value = 'datetime-local' === $type ? str_replace( ' ', 'T', $value ) : $value;
+			echo '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '"' . ( 'number' === $type ? ' min="0" step="1"' : '' ) . '>';
+		}
+		echo '</label>';
+	}
+
+	/**
+	 * Renderiza una lista de selección etiquetada.
+	 *
+	 * @param string               $name Nombre interno.
+	 * @param string               $label Etiqueta visible.
+	 * @param string               $value Valor guardado.
+	 * @param array<string,string> $options Opciones del control.
+	 * @return void
+	 */
+	private function select_control( string $name, string $label, string $value, array $options ): void {
+		echo '<label class="tbreg-control"><span>' . esc_html( $label ) . '</span><select name="' . esc_attr( $name ) . '">';
+		foreach ( $options as $key => $text ) {
+			echo '<option value="' . esc_attr( $key ) . '" ' . selected( $key, $value, false ) . '>' . esc_html( $text ) . '</option>';
+		}
+		echo '</select></label>';
+	}
+
+	/**
+	 * Renderiza una casilla de configuración.
+	 *
+	 * @param string $name Nombre interno.
+	 * @param string $label Etiqueta visible.
+	 * @param bool   $value Estado guardado.
+	 * @return void
+	 */
+	private function checkbox_control( string $name, string $label, bool $value ): void {
+		echo '<label class="tbreg-control tbreg-checkbox"><input type="checkbox" name="' . esc_attr( $name ) . '" value="1" ' . checked( $value, true, false ) . '><span>' . esc_html( $label ) . '</span></label>';
+	}
+}
