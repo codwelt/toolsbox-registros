@@ -348,13 +348,11 @@ final class FormEditorPage {
 					<?php endforeach; ?>
 				</div>
 				<section id="tbreg-panel-fields" role="tabpanel" aria-labelledby="tbreg-tab-fields" class="tbreg-panel">
-					<div class="tbreg-builder-layout">
-						<aside class="tbreg-palette" aria-label="<?php esc_attr_e( 'Agregar campos', 'toolsbox-registros' ); ?>">
-							<h2><?php esc_html_e( 'Agregar un campo', 'toolsbox-registros' ); ?></h2>
-							<?php foreach ( Templates::types() as $type => $label ) : ?>
-								<button type="button" class="button tbreg-add-field" data-type="<?php echo esc_attr( $type ); ?>">+ <?php echo esc_html( $label ); ?></button>
-							<?php endforeach; ?>
-							<h3><?php esc_html_e( 'Plantillas rápidas', 'toolsbox-registros' ); ?></h3>
+					<div class="tbreg-canvas">
+						<div class="tbreg-canvas-toolbar">
+							<h2><?php esc_html_e( 'Campos', 'toolsbox-registros' ); ?> (<span id="tbreg-fields-count">0</span>)</h2>
+							<details class="tbreg-templates" data-tbreg-ui>
+							<summary><?php esc_html_e( 'Plantillas', 'toolsbox-registros' ); ?></summary>
 							<label class="screen-reader-text" for="tbreg-template"><?php esc_html_e( 'Elegir plantilla', 'toolsbox-registros' ); ?></label>
 							<select id="tbreg-template">
 							<?php
@@ -362,13 +360,26 @@ final class FormEditorPage {
 								?>
 								<option value="<?php echo esc_attr( $name ); ?>"><?php echo esc_html( $template['label'] ); ?></option><?php endforeach; ?></select>
 							<button type="button" class="button" id="tbreg-apply-template"><?php esc_html_e( 'Usar plantilla', 'toolsbox-registros' ); ?></button>
-						</aside>
-						<div class="tbreg-canvas">
-							<p class="description"><?php esc_html_e( 'Arrastra el asa de un campo para ordenarlo o usa las flechas para moverlo con el teclado.', 'toolsbox-registros' ); ?></p>
-							<p id="tbreg-fields-empty" class="tbreg-empty"><?php esc_html_e( 'Agrega tu primer campo o elige una plantilla para empezar.', 'toolsbox-registros' ); ?></p>
-							<ul id="tbreg-fields" aria-label="<?php esc_attr_e( 'Campos activos', 'toolsbox-registros' ); ?>"></ul>
-							<section id="tbreg-archived" hidden><h2><?php esc_html_e( 'Campos archivados', 'toolsbox-registros' ); ?></h2><p class="description"><?php esc_html_e( 'Sus valores anteriores se conservan para las inscripciones y la exportación.', 'toolsbox-registros' ); ?></p><ul></ul></section>
+							</details>
+							<button type="button" class="button" id="tbreg-expand-all" aria-controls="tbreg-fields"><?php esc_html_e( 'Expandir todo', 'toolsbox-registros' ); ?></button>
 						</div>
+						<p id="tbreg-field-status" role="status" aria-live="polite" aria-atomic="true"></p>
+							<p class="description"><?php esc_html_e( 'Arrastra el asa de un campo para ordenarlo o usa las flechas para moverlo con el teclado.', 'toolsbox-registros' ); ?></p>
+							<div id="tbreg-fields-empty" class="tbreg-empty">
+								<h3><?php esc_html_e( 'Empieza con una plantilla', 'toolsbox-registros' ); ?></h3>
+								<div class="tbreg-template-cards">
+								<?php foreach ( Templates::all() as $name => $template ) : ?>
+									<button type="button" class="button" data-tbreg-template="<?php echo esc_attr( $name ); ?>"><?php echo esc_html( $template['label'] ); ?></button>
+								<?php endforeach; ?>
+								</div>
+								<p><?php esc_html_e( 'O agrega tu primer campo con el botón de abajo.', 'toolsbox-registros' ); ?></p>
+							</div>
+							<ul id="tbreg-fields" aria-label="<?php esc_attr_e( 'Campos activos', 'toolsbox-registros' ); ?>"></ul>
+							<div id="tbreg-inserter-end">
+								<button type="button" class="button" id="tbreg-add-field" aria-controls="tbreg-inserter" aria-expanded="false"><?php esc_html_e( '+ Agregar campo', 'toolsbox-registros' ); ?></button>
+								<?php $this->inserter(); ?>
+							</div>
+							<section id="tbreg-archived" hidden><h2><?php esc_html_e( 'Campos archivados', 'toolsbox-registros' ); ?></h2><p class="description"><?php esc_html_e( 'Sus valores anteriores se conservan para las inscripciones y la exportación.', 'toolsbox-registros' ); ?></p><ul></ul></section>
 					</div>
 				</section>
 				<section id="tbreg-panel-settings" role="tabpanel" aria-labelledby="tbreg-tab-settings" class="tbreg-panel tbreg-settings-grid" hidden>
@@ -393,7 +404,7 @@ final class FormEditorPage {
 						)
 					);
 					$this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo (0 = ilimitado)', 'toolsbox-registros' ), (string) $settings['capacity'], 'number', 'tbreg-capacity' );
-					$this->control( 'tbreg_settings[opens_at]', __( 'Apertura de inscripciones', 'toolsbox-registros' ), $settings['opens_at'], 'datetime-local' );
+					$this->control( 'tbreg_settings[opens_at]', __( 'Apertura de inscripciones', 'toolsbox-registros' ), $settings['opens_at'], 'datetime-local', 'tbreg-opens-at' );
 					$this->control( 'tbreg_settings[closes_at]', __( 'Cierre de inscripciones', 'toolsbox-registros' ), $settings['closes_at'], 'datetime-local' );
 					$this->select_control(
 						'tbreg_settings[prevent_duplicates]',
@@ -449,6 +460,39 @@ final class FormEditorPage {
 	}
 
 	/**
+	 * Catálogo único que se abre en la posición de inserción elegida.
+	 *
+	 * @return void
+	 */
+	private function inserter(): void {
+		$groups = array(
+			__( 'Texto y contacto', 'toolsbox-registros' ) => array( 'text', 'textarea', 'email', 'tel', 'document', 'url' ),
+			__( 'Selección', 'toolsbox-registros' )        => array( 'select', 'radio', 'checkbox' ),
+			__( 'Fecha y número', 'toolsbox-registros' )   => array( 'date', 'time', 'number' ),
+			__( 'Especiales', 'toolsbox-registros' )       => array( 'photo', 'consent', 'hidden' ),
+			__( 'Diseño', 'toolsbox-registros' )           => array( 'heading' ),
+		);
+		$types  = Templates::types();
+		?>
+		<section id="tbreg-inserter" class="tbreg-inserter" role="dialog" aria-labelledby="tbreg-inserter-title" data-tbreg-ui hidden>
+			<div class="tbreg-inserter-heading"><h3 id="tbreg-inserter-title"><?php esc_html_e( 'Agregar un campo', 'toolsbox-registros' ); ?></h3><button type="button" class="button" id="tbreg-close-inserter"><?php esc_html_e( 'Cerrar', 'toolsbox-registros' ); ?></button></div>
+			<label for="tbreg-inserter-search"><?php esc_html_e( 'Buscar tipo de campo', 'toolsbox-registros' ); ?></label>
+			<input type="search" id="tbreg-inserter-search" autocomplete="off">
+			<p id="tbreg-inserter-empty" role="status" hidden><?php esc_html_e( 'No se encontraron tipos de campo.', 'toolsbox-registros' ); ?></p>
+			<div class="tbreg-inserter-groups">
+			<?php foreach ( $groups as $label => $members ) : ?>
+				<div class="tbreg-inserter-group"><h4><?php echo esc_html( $label ); ?></h4><div class="tbreg-inserter-types">
+				<?php foreach ( $members as $type ) : ?>
+					<button type="button" class="button tbreg-add-field" data-type="<?php echo esc_attr( $type ); ?>"><?php echo esc_html( $types[ $type ] ); ?></button>
+				<?php endforeach; ?>
+				</div></div>
+			<?php endforeach; ?>
+			</div>
+		</section>
+		<?php
+	}
+
+	/**
 	 * Panel compartido por todas las pestañas, con controles POST únicos.
 	 *
 	 * @param array<string,mixed> $data Formulario guardado.
@@ -490,8 +534,11 @@ final class FormEditorPage {
 				<progress id="tbreg-capacity-progress" aria-label="<?php esc_attr_e( 'Ocupación del cupo', 'toolsbox-registros' ); ?>" data-count="<?php echo esc_attr( (string) $data['entries_count'] ); ?>" max="<?php echo esc_attr( (string) max( 1, $settings['capacity'] ) ); ?>" value="<?php echo esc_attr( (string) min( $data['entries_count'], max( 1, $settings['capacity'] ) ) ); ?>" <?php echo $settings['capacity'] > 0 ? '' : 'hidden'; ?>></progress>
 				<p class="description"><?php esc_html_e( 'El contador incluye las inscripciones que ocupan cupo.', 'toolsbox-registros' ); ?></p>
 				<p><strong><?php esc_html_e( 'Abre:', 'toolsbox-registros' ); ?></strong> <span id="tbreg-opens-summary"><?php echo esc_html( '' !== $settings['opens_at'] ? substr( str_replace( 'T', ' ', $settings['opens_at'] ), 0, 16 ) : __( 'Sin fecha', 'toolsbox-registros' ) ); ?></span><br>
-				<strong><?php esc_html_e( 'Cierra:', 'toolsbox-registros' ); ?></strong> <span id="tbreg-closes-summary"><?php echo esc_html( '' !== $settings['closes_at'] ? substr( str_replace( 'T', ' ', $settings['closes_at'] ), 0, 16 ) : __( 'Sin fecha', 'toolsbox-registros' ) ); ?></span></p>
-				<p class="description"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Hora del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?> <a href="#tbreg-capacity" data-tbreg-settings-link><?php esc_html_e( 'Cambiar', 'toolsbox-registros' ); ?></a></p>
+				<strong><?php esc_html_e( 'Cierra:', 'toolsbox-registros' ); ?></strong> <span id="tbreg-closes-summary"><?php echo esc_html( '' !== $settings['closes_at'] ? substr( str_replace( 'T', ' ', $settings['closes_at'] ), 0, 16 ) : __( 'Sin fecha', 'toolsbox-registros' ) ); ?></span> <a href="#tbreg-opens-at" data-tbreg-settings-link><?php esc_html_e( 'Cambiar fechas', 'toolsbox-registros' ); ?></a></p>
+				<p class="description"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Hora del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?>
+				<?php if ( in_array( wp_timezone_string(), array( 'UTC', '+00:00', 'Etc/UTC', 'GMT', 'Etc/GMT' ), true ) && current_user_can( 'manage_options' ) ) : ?>
+					<a href="<?php echo esc_url( admin_url( 'options-general.php#timezone_string' ) ); ?>"><?php esc_html_e( 'Configurar zona horaria', 'toolsbox-registros' ); ?></a>
+				<?php endif; ?></p>
 				<?php if ( $data['id'] > 0 ) : ?>
 					<a class="button" id="tbreg-preview-link" target="_blank" rel="noopener noreferrer" href="<?php echo esc_url( $preview ); ?>"><?php esc_html_e( 'Vista previa', 'toolsbox-registros' ); ?><span class="screen-reader-text"> <?php esc_html_e( '(abre una pestaña nueva)', 'toolsbox-registros' ); ?></span></a>
 					<p class="description"><?php esc_html_e( 'Muestra la última versión guardada, sin enviar inscripciones.', 'toolsbox-registros' ); ?></p>

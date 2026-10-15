@@ -4,7 +4,7 @@ Tags: forms, registration, events, export, excel
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.3
+Stable tag: 0.3.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,13 @@ Sí. Copia la plantilla de templates/ dentro de toolsbox-registros/ en tu tema. 
 No. La desactivación conserva las tablas y los registros existentes.
 
 == Changelog ==
+
+= 0.3.4 =
+
+* Inserción de campos en cualquier posición con catálogo agrupado, buscador y navegación por teclado.
+* Tarjetas con resúmenes, menú de acciones y duplicación con claves nuevas.
+* Separadores visuales, plantillas en el lienzo y controles para expandir o contraer todos los campos.
+* Enlaces separados para fechas y zona horaria; Guardar inferior solo cuando el botón principal sale de pantalla.
 
 = 0.3.3 =
 

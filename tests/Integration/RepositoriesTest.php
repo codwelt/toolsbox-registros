@@ -133,7 +133,10 @@ final class RepositoriesTest extends TestCase {
 		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
 		$this->assertInstanceOf( Form::class, $saved );
 		$loaded = $this->forms->find( $saved->id() );
-		$this->assertSame( array_reverse( Field::TYPES ), array_map( static fn ( Field $field ): string => $field->get( 'type' ), $loaded->fields() ) );
+		$submitted = json_decode( $input['tbreg_fields'], true, 64, JSON_THROW_ON_ERROR );
+		$this->assertSame( array_column( $submitted, 'type' ), array_map( static fn ( Field $field ): string => $field->get( 'type' ), $loaded->fields() ) );
+		$this->assertSame( array_column( $submitted, 'key' ), array_column( $loaded->toArray()['fields'], 'key' ) );
+		$this->assertEqualsCanonicalizing( Field::TYPES, array_column( $submitted, 'type' ) );
 		$this->assertSame( array( 'medellin', 'bogota' ), array_column( array_values( array_filter( $loaded->toArray()['fields'], static fn ( array $field ): bool => 'checkbox' === $field['type'] ) )[0]['options'], 'value' ) );
 		$this->assertSame( 25, $loaded->settings()['capacity'] );
 		$this->assertTrue( $loaded->settings()['waitlist'] );
@@ -382,6 +385,33 @@ final class RepositoriesTest extends TestCase {
 		} finally {
 			remove_filter( 'user_has_cap', $deny, 99 );
 		}
+	}
+
+	public function test_inserter_catalog_and_timezone_link_respect_site_settings_and_capability(): void {
+		$editor = new FormEditorPage( $this->forms, $this->entries );
+		$utc = static fn (): string => 'UTC'; add_filter( 'pre_option_timezone_string', $utc );
+		$allow = static function ( array $caps ): array { $caps['manage_options'] = true; return $caps; }; add_filter( 'user_has_cap', $allow, 99 );
+		try {
+			ob_start(); $editor->render(); $html = ob_get_clean();
+			$this->assertStringNotContainsString( 'tbreg-palette', $html );
+			$this->assertSame( 5, substr_count( $html, 'class="tbreg-inserter-group"' ) );
+			preg_match_all( '/data-type="([a-z]+)"/', $html, $matches );
+			$this->assertEqualsCanonicalizing( Field::TYPES, $matches[1] );
+			$this->assertSame( count( Field::TYPES ), count( array_unique( $matches[1] ) ) );
+			$this->assertStringContainsString( 'options-general.php#timezone_string', $html );
+			$this->assertStringContainsString( 'href="#tbreg-opens-at" data-tbreg-settings-link', $html );
+			remove_filter( 'user_has_cap', $allow, 99 );
+			$deny = static function ( array $caps ): array { $caps['manage_options'] = false; return $caps; }; add_filter( 'user_has_cap', $deny, 99 );
+			try {
+				ob_start(); $editor->render(); $restricted = ob_get_clean();
+				$this->assertStringNotContainsString( 'options-general.php#timezone_string', $restricted );
+			} finally { remove_filter( 'user_has_cap', $deny, 99 ); }
+		} finally { remove_filter( 'pre_option_timezone_string', $utc ); remove_filter( 'user_has_cap', $allow, 99 ); }
+		$bogota = static fn (): string => 'America/Bogota'; add_filter( 'pre_option_timezone_string', $bogota );
+		try {
+			ob_start(); $editor->render(); $html = ob_get_clean();
+			$this->assertStringNotContainsString( 'options-general.php#timezone_string', $html );
+		} finally { remove_filter( 'pre_option_timezone_string', $bogota ); }
 	}
 
 	public function test_preview_requires_capability_matching_nonce_get_and_existing_form(): void {

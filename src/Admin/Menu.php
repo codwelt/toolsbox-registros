@@ -345,6 +345,27 @@ final class Menu {
 			'key'             => __( 'Identificador permanente', 'toolsbox-registros' ),
 			'queryParam'      => __( 'Parámetro de URL (opcional, por ejemplo utm_source)', 'toolsbox-registros' ),
 			'archived'        => __( 'Archivado', 'toolsbox-registros' ),
+			'duplicate'       => __( 'Duplicar', 'toolsbox-registros' ),
+			/* translators: %s: Etiqueta del campo original. */
+			'copyLabel'       => __( '%s (copia)', 'toolsbox-registros' ),
+			/* translators: %s: Etiqueta del campo duplicado. */
+			'duplicated'      => __( 'Campo duplicado: %s.', 'toolsbox-registros' ),
+			/* translators: %s: Etiqueta del campo nuevo. */
+			'added'           => __( 'Campo agregado: %s.', 'toolsbox-registros' ),
+			/* translators: %s: Etiqueta del campo siguiente. */
+			'insertBefore'    => __( 'Agregar campo antes de %s', 'toolsbox-registros' ),
+			/* translators: %s: Etiqueta del campo. */
+			'fieldActions'    => __( 'Acciones de %s', 'toolsbox-registros' ),
+			'emailPrincipal'  => __( 'Correo principal', 'toolsbox-registros' ),
+			'docPrincipal'    => __( 'Documento principal', 'toolsbox-registros' ),
+			/* translators: %s: Etiquetas de los campos padre. */
+			'dependsOn'       => __( 'Depende de %s', 'toolsbox-registros' ),
+			'oneOption'       => __( '1 opción', 'toolsbox-registros' ),
+			/* translators: %s: Cantidad de opciones. */
+			'optionCount'     => __( '%s opciones', 'toolsbox-registros' ),
+			'expandAll'       => __( 'Expandir todo', 'toolsbox-registros' ),
+			'collapseAll'     => __( 'Contraer todo', 'toolsbox-registros' ),
+			'templateApplied' => __( 'Plantilla aplicada.', 'toolsbox-registros' ),
 		);
 	}
 }

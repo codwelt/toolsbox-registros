@@ -12,7 +12,7 @@ const wp = path.resolve(plugin, '../../..');
 const html = fs.readFileSync(path.join(fixtureDir, 'editor.html'), 'utf8');
 const config = fs.readFileSync(path.join(fixtureDir, 'builder-config.js'), 'utf8');
 const source = fs.readFileSync(path.join(plugin, 'assets/admin/js/builder.js'), 'utf8');
-function setup(fields = [], used = [], markup = html) {
+function setup(fields = [], used = [], markup = html, beforeEval = () => {}) {
 	const dom = new JSDOM(markup, { runScripts: 'outside-only', url: 'https://wordpress.test/wp-admin/' });
 	const w = dom.window;
 	w.confirm = () => true;
@@ -23,7 +23,7 @@ function setup(fields = [], used = [], markup = html) {
 	for (const file of ['jquery/jquery.min.js', 'jquery/ui/core.min.js', 'jquery/ui/mouse.min.js', 'jquery/ui/sortable.min.js']) {
 		w.eval(fs.readFileSync(path.join(wp, 'wp-includes/js', file), 'utf8'));
 	}
-	w.eval(source);
+	beforeEval(w); w.eval(source);
 	const d = w.document;
 	const state = () => JSON.parse(d.getElementById('tbreg-fields-json').value);
 	const click = (root, label) => {
@@ -43,6 +43,86 @@ function setup(fields = [], used = [], markup = html) {
 	return { dom, w, d, state, click, input, submit };
 }
 const textField = { key: 'f_existing', type: 'text', label: 'Nombre', options: [], width: 'full', role: null, required: false, archived: false, default: '', validation: {} };
+test('insertar en una posición intermedia abre Etiqueta y conserva claves y orden', () => {
+	const { dom, w, d, state } = setup([textField, { ...textField, key: 'f_second', label: 'Segundo' }]);
+	d.querySelector('[data-key="f_second"] .tbreg-insert-button').click();
+	assert.equal(d.getElementById('tbreg-inserter').hidden, false); assert.equal(d.activeElement.id, 'tbreg-inserter-search');
+	d.querySelector('[data-type="tel"]').click(); const saved = state();
+	assert.deepEqual(saved.map(field => field.key === 'f_existing' || field.key === 'f_second' ? field.key : field.type), ['f_existing', 'tel', 'f_second']);
+	assert.equal(d.getElementById('tbreg-inserter').hidden, true);
+	assert.equal(d.activeElement.value, w.tbreg_builder.types.tel);
+	assert.equal(d.activeElement.closest('.tbreg-field').dataset.key, saved[1].key);
+	assert.equal(d.activeElement.closest('details').open, true); assert.match(d.getElementById('tbreg-field-status').textContent, /Campo agregado/);
+	const reload = setup(saved); assert.deepEqual(reload.state(), saved); reload.dom.window.close(); dom.window.close();
+});
+test('buscador y flechas/Enter/Esc insertan sin enviar y sin ensuciar al buscar', () => {
+	const { dom, w, d, state } = setup([textField]); const before = state();
+	d.getElementById('tbreg-add-field').click(); const search = d.getElementById('tbreg-inserter-search');
+	search.value = 'fotografia'; search.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(d.querySelector('[data-type="photo"]').hidden, false); assert.equal(d.querySelector('[data-type="text"]').hidden, true);
+	assert.notEqual(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+	search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.dataset.type, 'photo');
+	d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.id, 'tbreg-add-field'); assert.deepEqual(state(), before);
+	d.getElementById('tbreg-add-field').click(); search.value = 'correo'; search.dispatchEvent(new w.Event('input', { bubbles: true }));
+	const enter = new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }); search.dispatchEvent(enter);
+	assert.equal(enter.defaultPrevented, true); assert.equal(state().at(-1).type, 'email'); dom.window.close();
+});
+test('duplicar conserva opciones y dependencias con clave nueva y sin repetir roles', () => {
+	const parent = { ...textField, key: 'f_parent', type: 'select', label: 'Nivel', options: [{ label: 'Básico', value: 'basico' }] };
+	const child = { ...textField, key: 'f_child', type: 'select', label: 'Módulo', options: [{ label: 'Básico 1', value: 'b1', when: { f_parent: ['basico'] } }] };
+	const { dom, d, state, click, input } = setup([parent, child, { ...textField, key: 'f_mail', type: 'email', role: 'email' }], ['f_child']);
+	click(d.querySelector('[data-key="f_child"]'), 'duplicate'); const copy = state()[2];
+	assert.notEqual(copy.key, 'f_child'); assert.deepEqual(copy.options, child.options); assert.equal(copy.archived, false);
+	assert.equal(d.activeElement.closest('.tbreg-field').dataset.key, copy.key);
+	input(d.querySelector('[data-key="' + copy.key + '"] .tbreg-option'), 'label', 'Nuevo módulo');
+	assert.equal(state()[1].options[0].label, 'Básico 1'); assert.equal(state()[2].options[0].label, 'Nuevo módulo');
+	click(d.querySelector('[data-key="f_mail"]'), 'duplicate'); assert.equal(state().at(-1).role, null);
+	assert.equal(state().filter(field => field.role === 'email').length, 1);
+	assert.match(d.getElementById('tbreg-field-status').textContent, /Campo duplicado/); dom.window.close();
+});
+test('resúmenes se actualizan por etiqueta, ancho, rol y dependencias; separadores y expandir', () => {
+	const parent = { ...textField, key: 'f_parent', type: 'select', label: 'Nivel', required: true, width: 'half', options: [{ label: 'Básico', value: 'b' }] };
+	const child = { ...textField, key: 'f_child', type: 'select', label: 'Módulo', options: [{ label: 'Uno', value: 'u', when: { f_parent: ['b'] } }] };
+	const { dom, w, d, input } = setup([parent, child, { ...textField, key: 'f_heading', type: 'heading', label: 'Estudiante' }]);
+	assert.equal(d.getElementById('tbreg-fields-count').textContent, '3');
+	const chips = d.querySelector('[data-key="f_parent"] .tbreg-summary-chips').textContent;
+	assert.ok(chips.includes('Obligatorio') && chips.includes('½') && chips.includes('1 opción'));
+	assert.ok(d.querySelector('[data-key="f_heading"]').classList.contains('tbreg-field-heading'));
+	d.getElementById('tbreg-expand-all').click(); assert.equal(d.querySelectorAll('.tbreg-field-details[open]').length, 3);
+	assert.notEqual(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+	d.getElementById('tbreg-expand-all').click(); assert.equal(d.querySelectorAll('.tbreg-field-details[open]').length, 0);
+	input(d.querySelector('[data-key="f_parent"]'), 'label', '<b>Nivel nuevo</b>');
+	assert.ok(d.querySelector('[data-key="f_child"] .tbreg-summary-chips').textContent.includes('Depende de <b>Nivel nuevo</b>'));
+	assert.equal(d.querySelector('.tbreg-summary-chips b'), null); dom.window.close();
+});
+test('menú de tarjeta cerrada admite flechas y Escape con foco visible en el disparador', () => {
+	const { dom, w, d } = setup([textField]); const toggle = d.querySelector('.tbreg-menu-toggle');
+	toggle.focus(); toggle.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.textContent, w.tbreg_builder.labels.duplicate);
+	assert.equal(toggle.getAttribute('aria-expanded'), 'true'); assert.equal(d.querySelector('.tbreg-field-details').open, false);
+	d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.textContent, w.tbreg_builder.labels.remove);
+	d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement, toggle); assert.equal(toggle.getAttribute('aria-expanded'), 'false'); dom.window.close();
+});
+test('plantillas del estado vacío y confirmación conservan los campos usados', () => {
+	const { dom, w, d, state } = setup([textField], ['f_existing']);
+	w.confirm = () => false; d.querySelector('[data-tbreg-template="languages"]').click(); assert.equal(state().length, 1);
+	w.confirm = () => true; d.querySelector('[data-tbreg-template="languages"]').click();
+	assert.equal(state().filter(field => !field.archived).length, 18); assert.equal(state().find(field => field.key === 'f_existing').archived, true);
+	assert.equal(new Set(state().map(field => field.key)).size, state().length); dom.window.close();
+});
+test('Guardar inferior se oculta cuando el principal está visible y reaparece al salir', () => {
+	let observed; let report;
+	const { dom, d } = setup([], [], html, w => {
+		w.IntersectionObserver = class { constructor(callback) { report = callback; } observe(node) { observed = node; } };
+	});
+	assert.equal(observed, d.querySelector('.tbreg-publish [data-tbreg-save]'));
+	report([{ isIntersecting: true }]); assert.equal(d.querySelector('.tbreg-mobile-savebar').hidden, true);
+	report([{ isIntersecting: false }]); assert.equal(d.querySelector('.tbreg-mobile-savebar').hidden, false); dom.window.close();
+});
 test('Publicar está fuera de las tres pestañas y el aviso de correo no bloquea', () => {
 	const { dom, w, d, state, input } = setup([textField]);
 	assert.equal(d.querySelectorAll('[role="tab"]').length, 3);
@@ -60,7 +140,7 @@ test('Publicar está fuera de las tres pestañas y el aviso de correo no bloquea
 test('Cambiar enfoca Configuración y cupos/fechas conservan la hora local escrita', () => {
 	const { dom, w, d } = setup();
 	d.querySelector('[data-tbreg-settings-link]').click();
-	assert.equal(d.activeElement.id, 'tbreg-capacity'); assert.equal(d.getElementById('tbreg-panel-settings').hidden, false);
+	assert.equal(d.activeElement.id, 'tbreg-opens-at'); assert.equal(d.getElementById('tbreg-panel-settings').hidden, false);
 	const progress = d.getElementById('tbreg-capacity-progress'); progress.dataset.count = '2';
 	const capacity = d.getElementById('tbreg-capacity'); capacity.value = '3'; capacity.dispatchEvent(new w.Event('input', { bubbles: true }));
 	assert.equal(progress.hidden, false); assert.equal(progress.max, 3); assert.equal(progress.value, 2);
