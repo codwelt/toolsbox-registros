@@ -1,0 +1,63 @@
+{
+  "phase": "UX-4",
+  "date": "2026-10-15",
+  "version": "0.3.5",
+  "form_id": 5,
+  "form_5_unchanged": true,
+  "desktop": {
+    "viewport": 1400,
+    "options_card_height": 777.8125,
+    "option_row_height": 45,
+    "matrix_card_height": 747.40625,
+    "menu_button": {
+      "width": 32,
+      "height": 32,
+      "arrow_separate": true
+    }
+  },
+  "responsive": [
+    {
+      "viewport": 1400,
+      "document_scroll_width": 1400
+    },
+    {
+      "viewport": 1024,
+      "document_scroll_width": 1024
+    },
+    {
+      "viewport": 782,
+      "document_scroll_width": 782
+    },
+    {
+      "viewport": 375,
+      "document_scroll_width": 375
+    }
+  ],
+  "native_qa": {
+    "temporary_form_id": 8,
+    "temporary_form_deleted": true,
+    "cmd_s_noop_raw_fields_and_settings_identical": true,
+    "bulk_options_added": 2,
+    "rules_saved_from": [
+      "chips",
+      "matrix"
+    ],
+    "original_fields_preserved": 18,
+    "original_module_options_preserved": 8,
+    "matrix_keyboard": "ArrowRight moves focus without changing rule"
+  },
+  "verification": {
+    "TBREG_RUN_INTEGRATION": "1",
+    "php_tests": 150,
+    "php_assertions": 1442,
+    "php_skipped": 0,
+    "dom_tests": 52,
+    "dom_failed": 0,
+    "phpcs_files": 86,
+    "phpcs_errors": 0,
+    "phpcs_warnings": 0,
+    "activation_debug": true,
+    "table_checksums_and_counts_preserved": true
+  },
+  "scope": "Editor administrativo; no cambia el esquema JSON ni el formulario público."
+}

@@ -129,14 +129,14 @@
 		saveButtons.forEach(button => { button.disabled = false; });
 	});
 	const activateTab = name => {
-		form.querySelectorAll('[role="tab"]').forEach(tab => {
+		form.querySelectorAll('.tbreg-tabs [role="tab"]').forEach(tab => {
 			const active = tab.dataset.tab === name;
 			tab.setAttribute('aria-selected', String(active));
 			tab.tabIndex = active ? 0 : -1;
 			document.getElementById(tab.getAttribute('aria-controls')).hidden = !active;
 		});
 	};
-	const tabs = Array.from(form.querySelectorAll('[role="tab"]'));
+	const tabs = Array.from(form.querySelectorAll('.tbreg-tabs [role="tab"]'));
 	form.querySelectorAll('[data-tbreg-settings-link]').forEach(link => link.addEventListener('click', event => {
 		event.preventDefault(); activateTab('settings'); document.getElementById('tbreg-opens-at').focus();
 	}));
@@ -149,7 +149,12 @@
 	// La validación nativa debe mostrar también los controles de pestañas ocultas.
 	form.addEventListener('invalid', event => {
 		const panel = event.target.closest('[role="tabpanel"]');
-		if (panel) activateTab(panel.id.replace('tbreg-panel-', ''));
+		if (panel) {
+			activateTab('fields');
+			const card = event.target.closest('.tbreg-field-details');
+			if (card) { card.open = true; card.querySelector('[aria-controls="' + panel.id + '"]')?.click(); }
+			else activateTab(panel.id.replace('tbreg-panel-', ''));
+		}
 	}, true);
 	tabs.forEach((tab, index) => {
 		tab.addEventListener('click', () => activateTab(tab.dataset.tab));
@@ -181,6 +186,19 @@
 			collection.splice(index, 1); collection.splice(target, 0, item); sync();
 		}
 	};
+	const pendingRelated = new Set();
+	const refreshRelatedOptions = field => {
+		if (pendingRelated.has(field.key)) return;
+		pendingRelated.add(field.key);
+		queueMicrotask(() => {
+			pendingRelated.delete(field.key);
+			fields.filter(child => child.key !== field.key && !child.archived && child.options.some(option => Object.hasOwnProperty.call(option.when || {}, field.key))).forEach(child => {
+				const host = document.getElementById('tbreg-section-' + child.key + '-options-panel'); if (!host) return;
+				if (window.jQuery && jQuery.fn.sortable) jQuery(host).find('.tbreg-options.ui-sortable').sortable('destroy');
+				host.replaceChildren(); renderOptions(host, child); const defaults = el('div', undefined, 'tbreg-default'); defaults.dataset.defaultKey = child.key; host.append(defaults); renderDefault(defaults, child);
+			});
+		});
+	};
 	const refreshDefault = field => {
 		const host = form.querySelector('[data-default-key="' + field.key + '"]');
 		if (host) { host.replaceChildren(); renderDefault(host, field); }
@@ -209,66 +227,189 @@
 			if (type === 'number') input.step = 'any';
 		}
 	};
-	const renderConditions = (row, field, option) => {
-		const host = el('div',undefined,'tbreg-option-conditions'); host.append(el('p',labels.conditionsHelp,'description')); row.append(host);
-		option.when = option.when || {};
-		Object.entries(option.when).forEach(([parentKey, allowed]) => {
-			const line = el('div',undefined,'tbreg-condition'); host.append(line);
-			const candidates = fields.filter(parent=>!parent.archived && parent.key!==field.key && ['select','radio'].includes(parent.type));
-			const choices = Object.fromEntries(candidates.map(parent=>[parent.key,parent.label]));
-			if (!choices[parentKey]) choices[parentKey] = parentKey;
-			control(line,labels.condition,parentKey,next=>{if(next!==parentKey){ delete option.when[parentKey]; const parent=fields.find(item=>item.key===next); option.when[next]=parent && parent.options.length ? [parent.options[0].value] : []; sync(); render(field.key); }},choices);
-			const parent = fields.find(item=>item.key===parentKey); const group=el('fieldset'); group.append(el('legend',labels.conditionValues)); line.append(group);
-			(parent ? parent.options : []).forEach(choice=>{
-				const label=el('label',undefined,'tbreg-checkbox');const check=el('input');check.type='checkbox';check.checked=allowed.includes(choice.value);
-				check.addEventListener('change',()=>{option.when[parentKey]=Array.from(group.querySelectorAll('input:checked'),node=>node.value);sync();});check.value=choice.value;label.append(check,document.createTextNode(choice.label));group.append(label);
+	// UI state never becomes part of the saved field schema.
+	const sections = new Map();
+	const optionViews = new Map();
+	const parentViews = new Map();
+	const parentsFor = field => fields.filter(parent => !parent.archived && parent.key !== field.key && ['select', 'radio'].includes(parent.type));
+	const primaryParent = field => {
+		if (parentViews.has(field.key)) return parentViews.get(field.key);
+		const keys = field.options.flatMap(option => Object.keys(option.when || {}));
+		return keys[0] || '';
+	};
+	const setRule = (option, key, values) => {
+		if (values === null) {
+			if (option.when) { delete option.when[key]; if (!Object.keys(option.when).length) delete option.when; }
+		} else {
+			if (!option.when || Array.isArray(option.when)) option.when = {};
+			option.when[key] = values;
+		}
+		sync();
+	};
+	const ruleSummary = option => Object.entries(option.when || {}).map(([key, values]) => {
+		const parent = fields.find(item => item.key === key);
+		return (parent ? parent.label : key) + ' = ' + values.map(value => parent?.options.find(choice => choice.value === value)?.label || value).join(labels.or);
+	}).join(labels.and) || labels.always;
+	const renderRuleChoices = (host, field, option, key, changedRule) => {
+		const parent = fields.find(item => item.key === key);
+		if (!parent) return;
+		const group = el('fieldset', undefined, 'tbreg-rule-chips tbreg-option-conditions');
+		const legend = el('legend', parent.label); legend.className = 'screen-reader-text'; group.append(legend);
+		const unrestricted = !Object.hasOwnProperty.call(option.when || {}, key);
+		const always = button(labels.always, () => { setRule(option, key, null); changedRule(null); }, 'tbreg-chip');
+		always.setAttribute('aria-pressed', String(unrestricted)); group.append(always);
+		parent.options.forEach(choice => {
+			const label = el('label', undefined, 'tbreg-rule-chip');
+			const check = el('input'); check.type = 'checkbox'; check.value = choice.value;
+			check.checked = !unrestricted && option.when[key].includes(choice.value);
+			check.disabled = unrestricted && Object.keys(option.when || {}).length >= 8;
+			check.addEventListener('change', () => {
+				const selected = [...group.querySelectorAll('input:checked')].map(input => input.value);
+				setRule(option, key, selected); changedRule(choice.value);
 			});
-			line.append(button(labels.remove,()=>{delete option.when[parentKey];sync();render(field.key);}));
+			label.append(check, document.createTextNode(choice.label)); group.append(label);
 		});
-		const add=button(labels.addCondition,()=>{
-			const parent=fields.find(item=>!item.archived && item.key!==field.key && ['select','radio'].includes(item.type) && !Object.hasOwnProperty.call(option.when,item.key));
-			if(parent){option.when[parent.key]=parent.options.length?[parent.options[0].value]:[];sync();render(field.key);}
+		group.classList.toggle('tbreg-rule-invalid', !unrestricted && !option.when[key].length);
+		host.append(group);
+	};
+	const renderConditions = (host, field, option, primary) => {
+		const advanced = el('details', undefined, 'tbreg-extra-conditions');
+		const summary = el('summary', ruleSummary(option)); advanced.append(summary);
+		const refresh = () => { summary.textContent = ruleSummary(option); };
+		Object.entries(option.when || {}).filter(([key]) => key !== primary).forEach(([key]) => {
+			const line = el('div', undefined, 'tbreg-condition'); advanced.append(line);
+			const candidates = parentsFor(field).filter(parent => parent.key === key || !Object.hasOwnProperty.call(option.when || {}, parent.key));
+			const choices = Object.fromEntries(candidates.map(parent => [parent.key, parent.label]));
+			if (!choices[key]) choices[key] = key;
+			control(line, labels.condition, key, next => {
+				if (next === key) return;
+				setRule(option, key, null);
+				const parent = fields.find(item => item.key === next);
+				setRule(option, next, parent.options.length ? [parent.options[0].value] : []); render(field.key);
+			}, choices);
+			const ruleHost = el('div'); line.append(ruleHost);
+			const refreshChoices = value => { ruleHost.replaceChildren(); renderRuleChoices(ruleHost, field, option, key, refreshChoices); refresh(); ([...ruleHost.querySelectorAll('input')].find(input => input.value === value) || ruleHost.querySelector('button')).focus(); };
+			renderRuleChoices(ruleHost, field, option, key, refreshChoices);
+			line.append(button(labels.remove, () => { setRule(option, key, null); render(field.key); }));
 		});
-		add.disabled=Object.keys(option.when).length>=8 || !fields.some(item=>!item.archived && item.key!==field.key && ['select','radio'].includes(item.type) && !Object.hasOwnProperty.call(option.when,item.key)); host.append(add);
+		const add = button(labels.otherCondition, () => {
+			const parent = parentsFor(field).find(item => !Object.hasOwnProperty.call(option.when || {}, item.key));
+			if (!parent) return;
+			setRule(option, parent.key, parent.options.length ? [parent.options[0].value] : []);
+			render(field.key);
+			const rows = form.querySelectorAll('[data-key="' + field.key + '"] .tbreg-option');
+			const row = [...rows].find(row => row.tbregOption === option);
+			if (row) { row.querySelector('.tbreg-option-actions').open = true; row.querySelector('.tbreg-extra-conditions').open = true; row.querySelector('.tbreg-extra-conditions button')?.focus(); }
+		});
+		add.disabled = Object.keys(option.when || {}).length >= 8 || !parentsFor(field).some(item => !Object.hasOwnProperty.call(option.when || {}, item.key));
+		advanced.append(add); host.append(advanced);
+	};
+	const renderMatrix = (host, field, key) => {
+		const parent = fields.find(item => item.key === key);
+		if (!parent) return;
+		const table = el('table', undefined, 'widefat striped tbreg-matrix');
+		table.append(el('caption', field.label + ' × ' + parent.label));
+		const head = el('thead'); const headings = el('tr'); head.append(headings); table.append(head);
+		[field.label, labels.always, ...parent.options.map(option => option.label), labels.otherConditions].forEach(text => { const th = el('th', text); th.scope = 'col'; headings.append(th); });
+		const body = el('tbody'); table.append(body);
+		field.options.forEach(option => {
+			const row = el('tr'); const th = el('th', option.label); th.scope = 'row'; row.append(th); body.append(row);
+			const unrestricted = !Object.hasOwnProperty.call(option.when || {}, key);
+			[null, ...parent.options.map(choice => choice.value)].forEach((value, index) => {
+				const cell = el('td'); const check = el('input'); check.type = 'checkbox';
+				check.setAttribute('aria-label', option.label + ': ' + (index ? parent.options[index - 1].label : labels.always));
+				check.checked = value === null ? unrestricted : !unrestricted && option.when[key].includes(value);
+				check.disabled = unrestricted && Object.keys(option.when || {}).length >= 8;
+				check.addEventListener('change', () => {
+					if (value === null) setRule(option, key, check.checked ? null : []);
+					else {
+						const allowed = [...(option.when?.[key] || [])];
+						const selected = check.checked ? [...allowed, value] : allowed.filter(item => item !== value);
+						setRule(option, key, parent.options.filter(choice => selected.includes(choice.value)).map(choice => choice.value));
+					}
+					const checks = row.querySelectorAll('input'); const always = !Object.hasOwnProperty.call(option.when || {}, key);
+					checks.forEach((input, i) => { input.checked = i === 0 ? always : !always && option.when[key].includes(parent.options[i - 1].value); });
+					row.classList.toggle('tbreg-rule-invalid', !always && !option.when[key].length);
+				});
+				cell.append(check); row.append(cell);
+			});
+			row.append(el('td', ruleSummary({ when: Object.fromEntries(Object.entries(option.when || {}).filter(([parentKey]) => parentKey !== key)) })));
+			row.classList.toggle('tbreg-rule-invalid', !unrestricted && !option.when[key].length);
+		});
+		table.addEventListener('keydown', event => {
+			if (event.target.tagName !== 'INPUT' || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+			event.preventDefault(); const rows = [...body.rows]; const row = event.target.closest('tr'); const inputs = [...row.querySelectorAll('input')]; const column = inputs.indexOf(event.target); const index = rows.indexOf(row);
+			const target = event.key === 'Home' ? inputs[0] : event.key === 'End' ? inputs.at(-1) : event.key === 'ArrowLeft' ? inputs[column - 1] : event.key === 'ArrowRight' ? inputs[column + 1] : rows[index + (event.key === 'ArrowUp' ? -1 : 1)]?.querySelectorAll('input')[column];
+			if (target && !target.disabled) target.focus();
+		});
+		const scroll = el('div', undefined, 'tbreg-matrix-scroll'); scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', field.label + ' × ' + parent.label); scroll.append(table); host.append(scroll);
 	};
 	const renderOptions = (parent, field) => {
-		parent.append(el('h4', labels.options));
 		if (used.has(field.key)) parent.append(el('p', labels.optionWarning, 'description tbreg-warning'));
-		const optionList = el('ul', undefined, 'tbreg-options'); parent.append(optionList);
-		field.options.forEach(option => {
-			const row = el('li', undefined, 'tbreg-option');
-			const rowId = 'tbreg-option-' + (++serial);
-			row.id = rowId; row.tbregOption = option;
+		const primary = primaryParent(field);
+		const toolbar = el('div', undefined, 'tbreg-option-toolbar'); toolbar.dataset.tbregUi = '';
+		const selector = el('label', undefined, 'tbreg-control'); selector.append(el('span', labels.parentField));
+		const select = el('select');
+		const candidates = { '': labels.none, ...Object.fromEntries(parentsFor(field).map(item => [item.key, item.label])) };
+		if (primary && !candidates[primary]) candidates[primary] = primary;
+		Object.entries(candidates).forEach(([value, text]) => { const option = el('option', text); option.value = value; select.append(option); }); select.value = primary;
+		select.addEventListener('change', () => { parentViews.set(field.key, select.value); render(field.key); form.querySelector('[data-key="' + field.key + '"] .tbreg-option-toolbar select').focus(); });
+		selector.append(select); toolbar.append(selector);
+		const matrix = optionViews.get(field.key) === 'matrix' && !!primary;
+		const toggle = button(matrix ? labels.optionTable : labels.matrix, () => { optionViews.set(field.key, matrix ? 'table' : 'matrix'); render(field.key); form.querySelector('[data-key="' + field.key + '"] .tbreg-matrix-toggle').focus(); }, 'button tbreg-matrix-toggle');
+		toggle.disabled = !primary; toggle.setAttribute('aria-pressed', String(matrix)); toolbar.append(toggle); parent.append(toolbar, el('p', labels.parentHelp, 'description tbreg-parent-help'));
+		if (matrix) renderMatrix(parent, field, primary);
+		const columns = el('div', undefined, 'tbreg-options-heading'); columns.hidden = matrix; columns.setAttribute('aria-hidden', 'true'); columns.append(el('span'), el('span', labels.label), el('span', labels.value), el('span', labels.condition), el('span')); parent.append(columns);
+		const optionList = el('ul', undefined, 'tbreg-options'); optionList.hidden = matrix; parent.append(optionList);
+		field.options.forEach((option, optionIndex) => {
+			const row = el('li', undefined, 'tbreg-option'); row.id = 'tbreg-option-' + (++serial); row.tbregOption = option;
 			const handle = el('span', '↕', 'tbreg-option-handle'); handle.title = labels.drag; handle.setAttribute('aria-hidden', 'true'); row.append(handle);
-			let valueInput;
-			control(row, labels.label, option.label, value => {
+			let valueInput; let valueText;
+			const labelInput = control(row, labels.label, option.label, value => {
 				option.label = value;
-				if (option.auto) {
-					const next = slug(value); remapDefault(field, option.value, next); option.value = next; valueInput.value = next;
-				}
-				refreshDefault(field);
-			});
-			valueInput = control(row, labels.value, option.value, value => { remapDefault(field, option.value, value); option.auto = false; option.value = value; refreshDefault(field); });
-			const actions = el('div', undefined, 'tbreg-option-actions');
-			actions.append(button(labels.up, () => { move(field.options, option, -1); render(field.key); }), button(labels.down, () => { move(field.options, option, 1); render(field.key); }), button(labels.remove, () => {
+				if (option.auto) { const next = slug(value); remapDefault(field, option.value, next); option.value = next; valueInput.value = next; valueText.textContent = next; }
+				refreshDefault(field); refreshRelatedOptions(field);
+			}); labelInput.setAttribute('aria-label', labels.label + ' ' + (optionIndex + 1));
+			const valueHost = el('div', undefined, 'tbreg-value'); row.append(valueHost);
+			valueText = el('code', option.value); const valueEditor = el('div'); valueEditor.hidden = true;
+			valueInput = control(valueEditor, labels.value, option.value, value => { remapDefault(field, option.value, value); option.auto = false; option.value = value; valueText.textContent = value; refreshDefault(field); refreshRelatedOptions(field); });
+			valueInput.setAttribute('aria-label', labels.value + ' ' + (optionIndex + 1));
+			const edit = button('✎', () => { valueEditor.hidden = !valueEditor.hidden; valueText.hidden = !valueEditor.hidden; edit.setAttribute('aria-expanded', String(!valueEditor.hidden)); if (!valueEditor.hidden) valueInput.focus(); }, 'tbreg-icon');
+			edit.setAttribute('aria-label', labels.editValue + ' ' + (optionIndex + 1)); edit.setAttribute('aria-expanded', 'false'); valueEditor.id = row.id + '-value'; edit.setAttribute('aria-controls', valueEditor.id);
+			valueHost.append(valueText, edit, valueEditor);
+			const conditionCell = el('div', undefined, 'tbreg-primary-condition'); row.append(conditionCell);
+			const refreshRule = value => { const always = value === null; conditionCell.replaceChildren(); renderRuleChoices(conditionCell, field, option, primary, refreshRule); const next = always ? conditionCell.querySelector('button') : [...conditionCell.querySelectorAll('input')].find(input => input.value === value); if (next) next.focus(); const summary = actions.querySelector('.tbreg-extra-conditions > summary'); if (summary) summary.textContent = ruleSummary(option); };
+			renderRuleChoices(conditionCell, field, option, primary, refreshRule);
+			const actions = el('details', undefined, 'tbreg-option-actions'); const actionSummary = el('summary', '⋯'); actionSummary.setAttribute('aria-label', labels.options + ' ' + (optionIndex + 1)); actions.append(actionSummary);
+			const actionButtons = el('div', undefined, 'tbreg-option-buttons');
+			actionButtons.append(button(labels.up, () => { move(field.options, option, -1); render(field.key); }), button(labels.down, () => { move(field.options, option, 1); render(field.key); }), button(labels.remove, () => {
 				field.options.splice(field.options.indexOf(option), 1);
 				if (Array.isArray(field.default)) field.default = field.default.filter(value => value !== option.value);
 				else if (field.default === option.value) field.default = '';
 				sync(); render(field.key);
 			}));
-			Array.from(actions.children).forEach((node, index) => { node.setAttribute('aria-label', node.textContent); node.title = node.textContent; node.textContent = ['↑', '↓', '×'][index]; });
-			row.append(actions); renderConditions(row,field,option); optionList.append(row);
+			actionButtons.children[0].disabled = optionIndex === 0; actionButtons.children[1].disabled = optionIndex === field.options.length - 1;
+			actions.append(actionButtons); renderConditions(actions, field, option, primary); row.append(actions); optionList.append(row);
 		});
-		if (window.jQuery && jQuery.fn.sortable) {
-			jQuery(optionList).sortable({ handle: '.tbreg-option-handle', items: '> li', update: () => {
-				field.options = Array.from(optionList.children, row => row.tbregOption); sync();
-			} });
-		}
-		parent.append(button(labels.addOption, () => {
-			field.options.push({ label: '', value: '', auto: true }); sync(); render();
-			const last = document.querySelector('[data-key="' + field.key + '"] .tbreg-options li:last-child input');
-			if (last) last.focus();
+		if (window.jQuery && jQuery.fn.sortable) jQuery(optionList).sortable({ handle: '.tbreg-option-handle', items: '> li', update: () => { field.options = [...optionList.children].map(row => row.tbregOption); sync(); } });
+		const tools = el('div', undefined, 'tbreg-option-tools'); parent.append(tools);
+		tools.append(button(labels.addOption, () => {
+			field.options.push({ label: '', value: '', auto: true }); optionViews.set(field.key, 'table'); sections.set(field.key, 'options'); sync(); render(field.key);
+			form.querySelector('[data-key="' + field.key + '"] .tbreg-options li:last-child input').focus();
 		}));
+		const bulk = el('div', undefined, 'tbreg-bulk'); bulk.hidden = true; bulk.dataset.tbregUi = ''; bulk.id = 'tbreg-bulk-' + field.key;
+		const help = el('label', labels.bulkHelp); const textarea = el('textarea'); textarea.id = bulk.id + '-text'; help.htmlFor = textarea.id;
+		const status = el('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+		const paste = button(labels.bulkPaste, () => { bulk.hidden = !bulk.hidden; paste.setAttribute('aria-expanded', String(!bulk.hidden)); if (!bulk.hidden) textarea.focus(); }); paste.setAttribute('aria-expanded', 'false'); paste.setAttribute('aria-controls', bulk.id); tools.append(paste);
+		bulk.append(help, textarea, button(labels.bulkApply, () => {
+			const incoming = textarea.value.split(/\r?\n/).filter(line => line.trim()).map(line => {
+				const parts = line.split('|'); return { label: parts[0].trim(), value: parts.length === 1 ? slug(parts[0].trim()) : parts.length === 2 ? parts[1].trim() : '' };
+			});
+			const values = new Set(field.options.map(option => option.value));
+			if (!incoming.length || incoming.length + field.options.length > 500 || incoming.some(option => { if (!option.label || !option.value || values.has(option.value)) return true; values.add(option.value); return false; })) { status.textContent = labels.bulkInvalid; return; }
+			field.options.push(...incoming); optionViews.set(field.key, 'table'); sync(); render(field.key); announce(labels.bulkAdded);
+			form.querySelector('[data-key="' + field.key + '"] .tbreg-options li:nth-child(' + (field.options.length - incoming.length + 1) + ') input').focus();
+		}), button(labels.cancel, () => { bulk.hidden = true; paste.setAttribute('aria-expanded', 'false'); paste.focus(); }), status); parent.append(bulk);
 	};
 	const inserter = document.getElementById('tbreg-inserter');
 	const inserterEnd = document.getElementById('tbreg-inserter-end');
@@ -360,7 +501,7 @@
 		const toggle = button('⋯', () => {
 			const open = panel.hidden; closeMenus(); panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open));
 			if (open) panel.querySelector('button:not(:disabled)').focus();
-		}, 'button tbreg-menu-toggle');
+		}, 'tbreg-icon tbreg-menu-toggle');
 		toggle.id = 'tbreg-menu-toggle-' + field.key; panel.setAttribute('aria-labelledby', toggle.id);
 		toggle.setAttribute('aria-haspopup', 'menu'); toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', panel.id);
 		const duplicate = button(labels.duplicate, () => {
@@ -400,44 +541,62 @@
 		const heading = el('span', undefined, 'tbreg-summary-text'); heading.append(title, el('span', undefined, 'tbreg-summary-chips'));
 		summary.append(handle, heading); details.append(summary);
 		const body = el('div', undefined, 'tbreg-field-body'); details.append(body);
-		body.append(el('p', labels.key + ': ' + field.key, 'description tbreg-key'));
-		const grid = el('div', undefined, 'tbreg-field-grid'); body.append(grid);
+		const navigation = el('div', undefined, 'tbreg-field-tabs'); navigation.setAttribute('role', 'tablist'); navigation.setAttribute('aria-label', field.label); navigation.dataset.tbregUi = ''; body.append(navigation);
+		const panels = {};
+		const names = ['general', ...(isChoice(field) ? ['options'] : []), ...(['number', 'date', 'time'].includes(field.type) || hasLength(field.type) || hasPattern(field.type) ? ['validation'] : []), 'advanced'];
+		const activate = name => {
+			sections.set(field.key, name);
+			[...navigation.children].forEach(tab => { const active = tab.dataset.section === name; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; panels[tab.dataset.section].hidden = !active; });
+		};
+		names.forEach((name, index) => {
+			const tab = button(labels[name], () => activate(name), 'tbreg-field-tab'); tab.dataset.section = name; tab.id = 'tbreg-section-' + field.key + '-' + name; tab.setAttribute('role', 'tab');
+			const panel = el('div', undefined, 'tbreg-field-section'); panel.id = tab.id + '-panel'; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); tab.setAttribute('aria-controls', panel.id);
+			panels[name] = panel; navigation.append(tab); body.append(panel);
+			tab.addEventListener('keydown', event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? names.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length; activate(names[next]); navigation.children[next].focus(); });
+		});
+		const grid = el('div', undefined, 'tbreg-field-grid'); panels.general.append(grid);
 		control(grid, labels.label, field.label, value => { field.label = value; title.textContent = value || config.types[field.type]; });
 		const typeControl = control(grid, labels.type, field.type, value => {
 			field.type = value; field.options = isChoice(field) ? [{ label: '', value: '', auto: true }] : [];
 			if (value !== 'hidden') field.query_param = '';
-			field.default = ''; normalize(field); render();
+			field.default = ''; sections.set(field.key, 'general'); normalize(field); render();
 		}, config.types);
 		typeControl.disabled = used.has(field.key);
 		if (typeControl.disabled) grid.append(el('p', labels.lockedType, 'description'));
-		['help', 'css_class'].forEach(name => control(grid, labels[name], field[name] || '', value => { field[name] = value; }, null, name === 'help' ? 'textarea' : 'text'));
+		control(grid, labels.help, field.help || '', value => { field.help = value; }, null, 'textarea');
 		if (hasPlaceholder(field.type)) control(grid, labels.placeholder, field.placeholder || '', value => { field.placeholder = value; });
-		if (field.type !== 'heading') control(grid, labels.width, field.width || 'full', value => { field.width = value; }, { full: labels.full, half: labels.half, third: labels.third });
-		const roles = rolesFor(field.type);
-		if (roles.length) {
-			const choices = { '': labels.none }; roles.forEach(role => { choices[role] = labels[role]; });
-			control(grid, labels.role, field.role || '', value => { field.role = value || null; }, choices);
-		}
 		if (!['heading', 'hidden'].includes(field.type)) {
-			const required = el('label', undefined, 'tbreg-checkbox');
-			const check = el('input'); check.type = 'checkbox'; check.checked = !!field.required || field.type === 'consent'; check.disabled = field.type === 'consent';
+			const required = el('label', undefined, 'tbreg-checkbox tbreg-switch');
+			const check = el('input'); check.type = 'checkbox'; check.setAttribute('role', 'switch'); check.checked = !!field.required || field.type === 'consent'; check.disabled = field.type === 'consent';
 			check.addEventListener('change', () => { field.required = check.checked; sync(); }); required.append(check, document.createTextNode(labels.required)); grid.append(required);
 		}
-		field.validation = field.validation || {};
-		if (['number', 'date', 'time'].includes(field.type)) ['min', 'max'].forEach(name => {
-			const type = field.type;
-			const input = control(grid, labels[name], field.validation[name], value => { field.validation[name] = value === '' ? null : type === 'number' ? Number(value) : value; }, null, type);
-			if (type === 'number') input.step = 'any';
-		});
-		if (hasLength(field.type)) ['minlength', 'maxlength'].forEach(name => {
-			const input = control(grid, labels[name], field.validation[name], value => { field.validation[name] = value === '' ? null : Number(value); }, null, 'number'); input.step = '1'; input.min = '0';
-		});
-		if (hasPattern(field.type)) control(grid, labels.pattern, field.validation.pattern, value => { field.validation.pattern = value || null; });
-		if (field.type === 'hidden') control(grid, labels.queryParam, field.query_param || '', value => { field.query_param = value; });
-		if (isChoice(field)) renderOptions(body, field);
-		if (!['heading', 'consent', 'photo'].includes(field.type)) {
-			const defaults = el('div', undefined, 'tbreg-default'); defaults.dataset.defaultKey = field.key; body.append(defaults); renderDefault(defaults, field);
+		const advanced = el('div', undefined, 'tbreg-field-grid'); panels.advanced.append(advanced);
+		if (field.type !== 'heading') control(advanced, labels.width, field.width || 'full', value => { field.width = value; }, { full: labels.full, half: labels.half, third: labels.third });
+		const roles = rolesFor(field.type);
+		if (roles.length) { const choices = { '': labels.none }; roles.forEach(role => { choices[role] = labels[role]; }); control(advanced, labels.role, field.role || '', value => { field.role = value || null; }, choices); }
+		control(advanced, labels.css_class, field.css_class || '', value => { field.css_class = value; });
+		if (field.type === 'hidden') control(advanced, labels.queryParam, field.query_param || '', value => { field.query_param = value; });
+		const keyHost = el('div', undefined, 'tbreg-full tbreg-key-control'); keyHost.dataset.tbregUi = '';
+		const keyLabel = el('label', labels.key); const keyInput = el('input', undefined, 'tbreg-key'); keyInput.readOnly = true; keyInput.value = field.key; keyInput.id = 'tbreg-key-' + field.key; keyLabel.htmlFor = keyInput.id;
+		const keyStatus = el('p', undefined, 'description'); keyStatus.setAttribute('role', 'status'); keyStatus.setAttribute('aria-live', 'polite');
+		keyHost.append(keyLabel, keyInput, button(labels.copyKey, async () => {
+			keyStatus.textContent = '';
+			try { await navigator.clipboard.writeText(field.key); keyStatus.textContent = labels.keyCopied; }
+			catch (error) { keyInput.focus(); keyInput.select(); keyStatus.textContent = labels.keyManual; }
+		}), keyStatus); advanced.append(keyHost);
+		if (panels.validation) {
+			const validation = el('div', undefined, 'tbreg-field-grid'); panels.validation.append(validation);
+			if (['number', 'date', 'time'].includes(field.type)) ['min', 'max'].forEach(name => {
+				const type = field.type; const input = control(validation, labels[name], field.validation[name], value => { field.validation[name] = value === '' ? null : type === 'number' ? Number(value) : value; }, null, type); if (type === 'number') input.step = 'any';
+			});
+			if (hasLength(field.type)) ['minlength', 'maxlength'].forEach(name => { const input = control(validation, labels[name], field.validation[name], value => { field.validation[name] = value === '' ? null : Number(value); }, null, 'number'); input.step = '1'; input.min = '0'; });
+			if (hasPattern(field.type)) control(validation, labels.pattern, field.validation.pattern, value => { field.validation.pattern = value || null; });
 		}
+		if (isChoice(field)) renderOptions(panels.options, field);
+		if (!['heading', 'consent', 'photo'].includes(field.type)) {
+			const defaults = el('div', undefined, 'tbreg-default'); defaults.dataset.defaultKey = field.key; (panels.options || panels.general).append(defaults); renderDefault(defaults, field);
+		}
+		activate(names.includes(sections.get(field.key)) ? sections.get(field.key) : 'general');
 		shell.append(details); return item;
 	};
 	function render(focusKey, focusLabel, openField = true) {
@@ -464,11 +623,11 @@
 		if (focusKey) {
 			const card = Array.from(list.children).find(node => node.dataset.key === focusKey);
 			const requested = focusLabel && card ? Array.from(card.querySelectorAll('button')).find(node => node.textContent === focusLabel && !node.disabled) : null;
-			const target = requested || (card && card.querySelector(focusLabel ? '[data-action]:not(:disabled)' : 'input'));
+			const target = requested || (card && card.querySelector(focusLabel ? '[data-action]:not(:disabled)' : '.tbreg-field-section:not([hidden]) input:not([type="checkbox"])'));
 			if (target && target.closest('[role="menu"]')) {
 				target.closest('[role="menu"]').hidden = false; card.querySelector('[aria-haspopup]').setAttribute('aria-expanded', 'true');
 			}
-			if (target) target.focus();
+			if (target) { const panel = target.closest('.tbreg-field-section'); if (panel) card.querySelector('[aria-controls="' + panel.id + '"]').click(); target.focus(); }
 		}
 		sync(false);
 	}
@@ -506,6 +665,7 @@
 					if (!option.label.trim() || !option.value.trim() || values.has(option.value.trim())) return true;
 					values.add(option.value.trim()); return false;
 				})) return true;
+				if (field.options.some(option => Object.values(option.when || {}).some(values => !values.length))) return true;
 				const defaults = Array.isArray(field.default) ? field.default : [field.default];
 				if (defaults.some(value => value && !values.has(value))) return true;
 			}

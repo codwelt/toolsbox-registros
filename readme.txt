@@ -4,7 +4,7 @@ Tags: forms, registration, events, export, excel
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.4
+Stable tag: 0.3.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,12 @@ Sí. Copia la plantilla de templates/ dentro de toolsbox-registros/ en tu tema. 
 No. La desactivación conserva las tablas y los registros existentes.
 
 == Changelog ==
+
+= 0.3.5 =
+
+* Tarjeta de campo con secciones General, Opciones, Validación y Avanzado.
+* Opciones compactas con valores editables, pegado múltiple, dependencias por campo y matriz.
+* Menú de campo de 32 px, sin borde permanente y separado de la flecha.
 
 = 0.3.4 =
 

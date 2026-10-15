@@ -109,6 +109,25 @@ final class RepositoriesTest extends TestCase {
 		);
 	}
 
+	public function test_editor_conditional_options_roundtrip_preserves_canonical_json(): void {
+		$template = \Codwelt\ToolsBoxRegistros\Admin\LanguageTemplate::get();
+		$form = $this->forms->save( Form::fromArray( array( 'title' => 'Idiomas QA', 'fields' => $template['fields'], 'settings' => $template['settings'] ) ) );
+		$this->assertInstanceOf( Form::class, $form );
+		$original = $form->toArray()['fields'];
+		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
+		if ( $directory && is_dir( $directory ) ) file_put_contents( $directory . '/canonical-fields.json', wp_json_encode( $original ) );
+		$input = $this->editor_input( $form );
+		if ( $directory && is_file( $directory . '/dom-roundtrip.json' ) ) {
+			$input['tbreg_fields'] = file_get_contents( $directory . '/dom-roundtrip.json' );
+			$this->assertSame( $original, json_decode( $input['tbreg_fields'], true, 512, JSON_THROW_ON_ERROR ) );
+		}
+		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$this->assertSame( wp_json_encode( $original ), wp_json_encode( $saved->toArray()['fields'] ) );
+		$this->assertSame( $form->settings(), $saved->settings() );
+		$this->assertSame( $original, $this->forms->find( $saved->id() )->toArray()['fields'] );
+	}
+
 	public function test_editor_saves_all_types_order_options_and_settings(): void {
 		$fields = array();
 		foreach ( array_reverse( Field::TYPES ) as $type ) {

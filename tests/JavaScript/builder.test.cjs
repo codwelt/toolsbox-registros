@@ -125,10 +125,10 @@ test('Guardar inferior se oculta cuando el principal está visible y reaparece a
 });
 test('Publicar está fuera de las tres pestañas y el aviso de correo no bloquea', () => {
 	const { dom, w, d, state, input } = setup([textField]);
-	assert.equal(d.querySelectorAll('[role="tab"]').length, 3);
+	assert.equal(d.querySelectorAll('.tbreg-tabs [role="tab"]').length, 3);
 	const status = d.querySelector('[name="tbreg_status"]');
 	assert.equal(d.querySelectorAll('[name="tbreg_status"]').length, 1);
-	for (const tab of d.querySelectorAll('[role="tab"]')) { tab.click(); assert.equal(status.closest('[hidden]'), null); }
+	for (const tab of d.querySelectorAll('.tbreg-tabs [role="tab"]')) { tab.click(); assert.equal(status.closest('[hidden]'), null); }
 	status.value = 'published'; status.dispatchEvent(new w.Event('change', { bubbles: true }));
 	assert.equal(d.getElementById('tbreg-email-warning').hidden, false);
 	d.querySelector('[data-type="email"]').click();
@@ -187,7 +187,7 @@ test('shortcode permanece fuera de las pestañas y copia su valor sin enviar el 
 	d.getElementById('tbreg-editor').addEventListener('submit', () => { submits++; });
 	assert.equal(input.readOnly, true);
 	assert.equal(status.getAttribute('aria-live'), 'polite');
-	for (const tab of d.querySelectorAll('[role="tab"]')) {
+	for (const tab of d.querySelectorAll('.tbreg-tabs [role="tab"]')) {
 		tab.click(); assert.equal(input.closest('[hidden]'), null);
 		copy.focus(); copy.click(); await new Promise(setImmediate);
 		assert.equal(copied, input.value);
@@ -364,4 +364,88 @@ test('predeterminados usan opciones visibles y se actualizan al renombrar o elim
 		click(d.querySelector('.tbreg-option'),'remove');assert.deepEqual(state()[0].default,type==='checkbox'?[]:'');assert.equal(d.querySelector('[data-default-key]').textContent.includes('Cali'),false);
 		assert.equal(w.tbreg_builder.labels.default.length>0,true);dom.window.close();
 	}
+});
+
+const levels = { ...textField, key: 'f_level', type: 'select', label: 'Nivel', options: [{ label: 'Básico', value: 'b' }, { label: 'Intermedio', value: 'i' }] };
+const courses = { ...levels, key: 'f_course', label: 'Curso', options: [{ label: 'Japonés', value: 'j' }, { label: 'Coreano', value: 'k' }] };
+const modules = { ...levels, key: 'f_module', label: 'Módulo', options: [{ label: 'Uno', value: 'uno', when: { f_level: ['b'], f_course: ['j'] } }, { label: 'Libre', value: 'libre' }], default: 'uno' };
+function section(d, key, name) { d.querySelector('[data-key="' + key + '"] [data-section="' + name + '"]').click(); }
+test('pestañas internas con flechas y clave copiable no ensucian ni cambian el JSON', async () => {
+	const { dom, w, d, state, click } = setup([textField]); const before = state(); const card = d.querySelector('.tbreg-field');
+	card.querySelector('summary').click(); const tab = card.querySelector('[data-section="general"]');
+	tab.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.dataset.section, 'advanced'); assert.equal(d.getElementById(d.activeElement.getAttribute('aria-controls')).hidden, false);
+	assert.equal(d.querySelector('[data-tab="fields"]').getAttribute('aria-selected'), 'true');
+	let copied; Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async value => { copied = value; } } });
+	click(card, 'copyKey'); await new Promise(setImmediate); assert.equal(copied, textField.key); assert.equal(card.querySelector('.tbreg-key').readOnly, true);
+	assert.match(card.querySelector('[role="status"]').textContent, /Identificador copiado/);
+	Object.defineProperty(w.navigator.clipboard, 'writeText', { value: async () => { throw new Error('denied'); } });
+	click(card, 'copyKey'); await new Promise(setImmediate); assert.equal(d.activeElement.value, textField.key); assert.equal(d.activeElement.selectionEnd, textField.key.length);
+	assert.deepEqual(state(), before); assert.notEqual(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed); dom.window.close();
+});
+test('pegado múltiple es atómico, conserva valores existentes y no interpreta HTML', () => {
+	const { dom, w, d, state, click } = setup([levels]); section(d, 'f_level', 'options'); let card = d.querySelector('.tbreg-field');
+	click(card, 'bulkPaste'); const bulk = card.querySelector('.tbreg-bulk textarea'); const before = state();
+	bulk.value = 'Básico repetido | b\nNuevo | n'; bulk.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.deepEqual(state(), before); assert.notEqual(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+	click(card, 'bulkApply'); assert.deepEqual(state(), before); assert.ok(card.querySelector('.tbreg-bulk [role="status"]').textContent.length);
+	bulk.value = 'Básico 2\nTurista | turista_1\n<img src=x> | literal'; click(card, 'bulkApply');
+	assert.deepEqual(state()[0].options.slice(0, 2), before[0].options);
+	assert.deepEqual(state()[0].options.slice(2).map(option => option.value), ['basico-2', 'turista_1', 'literal']);
+	assert.equal(d.querySelector('.tbreg-field img'), null); assert.equal(d.activeElement.value, 'Básico 2');
+	assert.equal(d.activeElement.closest('.tbreg-field-section').hidden, false); dom.window.close();
+});
+test('matriz y chips editan la misma regla y conservan las condiciones de otros padres', () => {
+	const { dom, w, d, state, click } = setup([levels, courses, modules]); const getCard = () => d.querySelector('[data-key="f_module"]');
+	section(d, 'f_module', 'options'); const before = state(); click(getCard(), 'matrix');
+	assert.deepEqual(state(), before); assert.equal(getCard().querySelectorAll('.tbreg-matrix tbody tr').length, 2);
+	const check = getCard().querySelector('.tbreg-matrix input[aria-label="Uno: Intermedio"]'); check.click();
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['b', 'i'], f_course: ['j'] });
+	click(getCard(), 'optionTable'); const rule = getCard().querySelector('.tbreg-primary-condition'); assert.equal(rule.querySelector('input[value="i"]').checked, true);
+	rule.querySelector('input[value="b"]').click(); assert.equal(d.activeElement.value, 'b');
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['i'], f_course: ['j'] });
+	click(getCard(), 'matrix'); getCard().querySelector('.tbreg-matrix input[aria-label="Uno: Básico"]').click();
+	assert.deepEqual(state()[2].options[0].when.f_level, ['b', 'i']);
+	const firstCheck = getCard().querySelector('.tbreg-matrix input'); firstCheck.focus(); firstCheck.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.getAttribute('aria-label'), 'Uno: Básico');
+	getCard().querySelector('.tbreg-matrix input[aria-label="Uno: Básico"]').click(); click(getCard(), 'optionTable');
+	const selector = getCard().querySelector('.tbreg-option-toolbar select'); selector.value = 'f_course'; selector.dispatchEvent(new w.Event('change', { bubbles: true }));
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['i'], f_course: ['j'] });
+	getCard().querySelector('.tbreg-primary-condition input[value="k"]').click();
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['i'], f_course: ['j', 'k'] }); dom.window.close();
+});
+test('Siempre elimina solo la condición elegida; una condición vacía bloquea el guardado', () => {
+	const { dom, d, state, click, submit } = setup([levels, courses, modules]); section(d, 'f_module', 'options');
+	let card = d.querySelector('[data-key="f_module"]'); card.querySelector('.tbreg-primary-condition input[value="b"]').click();
+	assert.equal(submit(), false); assert.ok(d.querySelector('.tbreg-rule-invalid'));
+	card = d.querySelector('[data-key="f_module"]'); card.querySelector('.tbreg-primary-condition button').click();
+	assert.deepEqual(state()[2].options[0].when, { f_course: ['j'] });
+	assert.equal(submit(), true); dom.window.close();
+});
+test('condiciones adicionales se editan y eliminan sin aplanar las reglas', () => {
+	const { dom, d, state, click } = setup([levels, courses, modules]); section(d, 'f_module', 'options');
+	let card = d.querySelector('[data-key="f_module"]'); card.querySelector('.tbreg-condition input[value="k"]').click();
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['b'], f_course: ['j', 'k'] });
+	click(card.querySelector('.tbreg-condition'), 'remove'); card = d.querySelector('[data-key="f_module"]');
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['b'] }); click(card.querySelector('.tbreg-option'), 'otherCondition');
+	assert.deepEqual(state()[2].options[0].when, { f_level: ['b'], f_course: ['j'] }); assert.equal(card.isConnected, false); dom.window.close();
+});
+test('lápiz expone el valor guardado sin cambiarlo; editarlo remapea valores predeterminados y dependencias', async () => {
+	const { dom, d, state, input } = setup([levels, { ...modules, options: [{ label: 'Uno', value: 'uno', when: { f_level: ['b'] } }] }]); section(d, 'f_level', 'options');
+	const row = d.querySelector('.tbreg-option'); const before = state(); row.querySelector('.tbreg-icon').click();
+	assert.equal(d.activeElement.value, 'b'); assert.deepEqual(state(), before); assert.equal(row.querySelector('.tbreg-value > div').hidden, false);
+	input(row, 'value', 'basico'); input(row, 'label', 'Inicial');
+	assert.equal(state()[0].options[0].value, 'basico'); assert.deepEqual(state()[1].options[0].when, { f_level: ['basico'] }); await new Promise(setImmediate); assert.ok(d.querySelector('[data-key="f_module"] .tbreg-primary-condition input[value="basico"]')); assert.match(d.querySelector('[data-key="f_module"] .tbreg-primary-condition').textContent, /Inicial/); dom.window.close();
+});
+test('ida y vuelta de campos canónicos PHP es idéntica tras recorrer vistas y padres', () => {
+	const original = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'canonical-fields.json'), 'utf8'));
+	const { dom, w, d, state, submit } = setup(original);
+	assert.deepEqual(state(), original);
+	for (const field of original.filter(field => ['select', 'radio', 'checkbox'].includes(field.type))) {
+		section(d, field.key, 'options'); let card = d.querySelector('[data-key="' + field.key + '"]');
+		const select = card.querySelector('.tbreg-option-toolbar select');
+		for (const option of [...select.options]) { select.value = option.value; select.dispatchEvent(new w.Event('change', { bubbles: true })); card = d.querySelector('[data-key="' + field.key + '"]'); const live = card.querySelector('.tbreg-option-toolbar select'); if (live.value) { card.querySelector('.tbreg-matrix-toggle').click(); d.querySelector('[data-key="' + field.key + '"] .tbreg-matrix-toggle').click(); } }
+	}
+	assert.deepEqual(state(), original); assert.equal(submit(), true);
+	fs.writeFileSync(path.join(fixtureDir, 'dom-roundtrip.json'), JSON.stringify(state())); dom.window.close();
 });
