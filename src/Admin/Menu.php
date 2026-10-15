@@ -297,6 +297,13 @@ final class Menu {
 	 */
 	private function labels(): array {
 		return array(
+			'mergeGeneral'    => __( 'Datos de la inscripción', 'toolsbox-registros' ),
+			'mergeFields'     => __( 'Campos del formulario', 'toolsbox-registros' ),
+			'mergeEvent'      => __( 'Nombre del evento', 'toolsbox-registros' ),
+			'mergeEntry'      => __( 'Número de inscripción', 'toolsbox-registros' ),
+			'mergeAll'        => __( 'Todos los datos', 'toolsbox-registros' ),
+			/* translators: %s: Nombre del dato insertado. */
+			'mergeInserted'   => __( 'Dato insertado: %s.', 'toolsbox-registros' ),
 			'general'         => __( 'General', 'toolsbox-registros' ),
 			'validation'      => __( 'Validación', 'toolsbox-registros' ),
 			'advanced'        => __( 'Avanzado', 'toolsbox-registros' ),

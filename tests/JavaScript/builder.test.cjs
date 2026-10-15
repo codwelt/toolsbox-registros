@@ -449,3 +449,104 @@ test('ida y vuelta de campos canónicos PHP es idéntica tras recorrer vistas y 
 	assert.deepEqual(state(), original); assert.equal(submit(), true);
 	fs.writeFileSync(path.join(fixtureDir, 'dom-roundtrip.json'), JSON.stringify(state())); dom.window.close();
 });
+
+const settingsHtml = fs.readFileSync(path.join(fixtureDir, 'editor-settings.html'), 'utf8');
+const settingsFields = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'settings-fields.json'), 'utf8'));
+const setting = (d, name) => d.getElementById('tbreg-editor').elements.namedItem('tbreg_settings[' + name + ']');
+const notification = (d, name, key) => d.getElementById('tbreg-editor').elements.namedItem('tbreg_settings[' + name + '][' + key + ']');
+test('tarjetas y controles dependientes conservan valores ocultos en el POST', () => {
+	const { dom, w, d, state } = setup(settingsFields, [], settingsHtml); const before = state();
+	assert.deepEqual([...d.querySelectorAll('#tbreg-panel-settings .tbreg-settings-card > h2')].map(n => n.textContent), ['Información del evento', 'Inscripciones', 'Después de inscribirse', 'Comprobante en PDF', 'Privacidad y seguridad']);
+	assert.equal(d.querySelectorAll('#tbreg-panel-notifications .tbreg-settings-card').length, 2);
+	assert.equal(d.getElementById('tbreg-waitlist-options').hidden, true); assert.equal(setting(d, 'waitlist').checked, true);
+	setting(d, 'capacity').value = '25'; setting(d, 'capacity').dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(d.getElementById('tbreg-waitlist-options').hidden, false);
+	setting(d, 'capacity').value = '0'; setting(d, 'capacity').dispatchEvent(new w.Event('input', { bubbles: true }));
+	for (const [name, panel] of [['pdf_enabled', 'tbreg-pdf-options']]) {
+		assert.equal(d.getElementById(panel).hidden, true); setting(d, name).click(); assert.equal(d.getElementById(panel).hidden, false); setting(d, name).click(); assert.equal(d.getElementById(panel).hidden, true);
+	}
+	for (const [name, panel] of [['notify_admin', 'tbreg-notify-admin-options'], ['confirm_attendee', 'tbreg-confirm-attendee-options']]) {
+		assert.equal(d.getElementById(panel).hidden, true); notification(d, name, 'enabled').click(); assert.equal(d.getElementById(panel).hidden, false); notification(d, name, 'enabled').click(); assert.equal(d.getElementById(panel).hidden, true);
+		assert.equal(notification(d, name, 'subject').disabled, false);
+	}
+	const post = new w.FormData(d.getElementById('tbreg-editor'));
+	assert.equal(post.get('tbreg_settings[receipt_text]'), 'Segunda página guardada'); assert.equal(post.get('tbreg_settings[waitlist]'), '1');
+	assert.equal(post.get('tbreg_settings[notify_admin][to]'), 'qa@example.test'); assert.equal(post.get('tbreg_settings[confirm_attendee][body]'), '<p>Hola {field:f_name}</p>');
+	assert.deepEqual(state(), before); dom.window.close();
+});
+test('acción posterior conserva el borrador de URL al alternar y desactiva su validación al mostrar mensaje', () => {
+	const { dom, w, d } = setup(settingsFields, [], settingsHtml); const url = setting(d, 'redirect_url');
+	assert.equal(d.getElementById('tbreg-redirect-options').hidden, false); assert.equal(url.required, true);
+	d.querySelector('[name="tbreg_after_submit"][value="message"]').click();
+	assert.equal(url.value, 'https://example.test/gracias'); assert.equal(url.disabled, true); assert.equal(url.required, false); assert.equal(d.getElementById('tbreg-success-options').hidden, false);
+	assert.equal(new w.FormData(d.getElementById('tbreg-editor')).has('tbreg_settings[redirect_url]'), false);
+	d.querySelector('[name="tbreg_after_submit"][value="redirect"]').click();
+	assert.equal(url.value, 'https://example.test/gracias'); assert.equal(url.disabled, false); assert.equal(url.required, true);
+	assert.equal(new w.FormData(d.getElementById('tbreg-editor')).get('tbreg_settings[success_message]'), 'Mensaje guardado'); dom.window.close();
+});
+test('aviso de duplicados por correo sigue los roles activos al crear y eliminar campos', () => {
+	const { dom, w, d, state, input, click } = setup([textField]); const duplicates = setting(d, 'prevent_duplicates');
+	duplicates.value = 'email'; duplicates.dispatchEvent(new w.Event('change', { bubbles: true })); assert.equal(d.getElementById('tbreg-duplicate-email-warning').hidden, false);
+	d.querySelector('[data-type="email"]').click(); const key = state().at(-1).key; input(d.querySelector('[data-key="' + key + '"]'), 'role', 'email');
+	assert.equal(d.getElementById('tbreg-duplicate-email-warning').hidden, true); click(d.querySelector('[data-key="' + key + '"]'), 'remove');
+	assert.equal(d.getElementById('tbreg-duplicate-email-warning').hidden, false); dom.window.close();
+});
+test('Insertar dato reemplaza selección en asuntos y mensaje, enfoca el cursor y anuncia sin interpretar HTML', () => {
+	const { dom, w, d } = setup([{ ...textField, label: '<b>Nombre</b>' }]);
+	d.querySelector('[data-tab="notifications"]').click();
+	for (const id of ['tbreg-admin-subject', 'tbreg-attendee-subject', 'tbreg-attendee-body']) {
+		const target = d.getElementById(id); target.value = 'Antes [aquí] después'; target.focus(); target.setSelectionRange(6, 12);
+		d.querySelector('[data-tbreg-merge-target="' + id + '"]').click();
+		const choice = [...d.querySelectorAll('.tbreg-merge-choice')].find(n => n.textContent === '<b>Nombre</b>'); assert.ok(choice); assert.equal(choice.querySelector('b'), null); choice.click();
+		assert.equal(target.value, 'Antes {field:f_existing} después'); assert.equal(d.activeElement, target); assert.equal(target.selectionStart, 'Antes {field:f_existing}'.length);
+		assert.equal(d.getElementById('tbreg-merge-picker').hidden, true); assert.equal(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+		assert.equal(d.getElementById('tbreg-merge-status').textContent, 'Dato insertado: <b>Nombre</b>.');
+	}
+	dom.window.close();
+});
+test('selector de datos se recorre con teclado, busca sin ensuciar y restaura el foco al cerrar', () => {
+	const { dom, w, d } = setup([textField]); d.querySelector('[data-tab="notifications"]').click();
+	const trigger = d.querySelector('[data-tbreg-merge-target="tbreg-admin-subject"]'); trigger.click(); const search = d.getElementById('tbreg-merge-search');
+	search.value = 'inexistente'; search.dispatchEvent(new w.Event('input', { bubbles: true })); assert.equal(d.getElementById('tbreg-merge-empty').hidden, false);
+	const enter = new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }); search.dispatchEvent(enter); assert.equal(enter.defaultPrevented, true);
+	search.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); assert.equal(d.activeElement, trigger); assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+	assert.notEqual(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+	trigger.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })); assert.equal(d.activeElement.textContent, w.tbreg_builder.labels.mergeEvent);
+	d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true })); assert.equal(d.activeElement.textContent, 'Nombre');
+	d.getElementById('tbreg-admin-subject').focus(); assert.equal(d.getElementById('tbreg-merge-picker').hidden, true); dom.window.close();
+});
+test('catálogo de datos refleja etiquetas y claves actuales, excluye archivados, fotos y títulos', () => {
+	const { dom, d, input, state } = setup([textField, { ...textField, key: 'f_old', archived: true }, { ...textField, key: 'f_photo', type: 'photo', label: 'Foto' }, { ...textField, key: 'f_heading', type: 'heading', label: 'Separador' }]);
+	input(d.querySelector('[data-key="f_existing"]'), 'label', 'Nombre actualizado'); d.querySelector('[data-type="email"]').click(); const mail = state().find(field => field.type === 'email');
+	d.querySelector('[data-tab="notifications"]').click(); d.querySelector('[data-tbreg-merge-target="tbreg-admin-subject"]').click();
+	const choices = [...d.querySelectorAll('.tbreg-merge-choice')].map(n => n.textContent); assert.ok(choices.includes('Nombre actualizado')); assert.ok(choices.includes('Correo electrónico'));
+	assert.equal(choices.includes('Foto'), false); assert.equal(choices.includes('Separador'), false); assert.equal(choices.includes('Nombre'), false); assert.ok(mail); [...d.querySelectorAll('.tbreg-merge-choice')].find(node => node.textContent === 'Correo electrónico').click(); assert.equal(d.getElementById('tbreg-admin-subject').value, '{field:' + mail.key + '}'); dom.window.close();
+});
+test('datos insertados se incluyen en POST aunque luego se apaguen las notificaciones', () => {
+	const { dom, w, d } = setup(settingsFields, [], settingsHtml); d.querySelector('[data-tab="notifications"]').click();
+	for (const [name, id, label] of [['notify_admin', 'tbreg-admin-subject', 'Nombre'], ['confirm_attendee', 'tbreg-attendee-body', 'Todos los datos']]) {
+		notification(d, name, 'enabled').click(); const target = d.getElementById(id); target.focus(); target.setSelectionRange(target.value.length, target.value.length);
+		d.querySelector('[data-tbreg-merge-target="' + id + '"]').click(); [...d.querySelectorAll('.tbreg-merge-choice')].find(node => node.textContent === label).click(); notification(d, name, 'enabled').click();
+	}
+	const post = new w.FormData(d.getElementById('tbreg-editor')); const settings = {};
+	for (const [name, value] of post) {
+		if (!name.startsWith('tbreg_settings[')) continue;
+		const keys = [...name.matchAll(/\[([^\]]+)\]/g)].map(match => match[1]); let current = settings;
+		keys.slice(0, -1).forEach(key => { current = current[key] ||= {}; }); current[keys.at(-1)] = value;
+	}
+	assert.equal(settings.notify_admin.subject, 'Alta {event_name}{field:f_name}'); assert.equal(settings.confirm_attendee.body, '<p>Hola {field:f_name}</p>{all_fields}');
+	assert.equal(settings.notify_admin.enabled, undefined); assert.equal(settings.confirm_attendee.enabled, undefined); assert.equal(settings.waitlist, '1');
+	fs.writeFileSync(path.join(fixtureDir, 'dom-settings-post.json'), JSON.stringify({ settings, mode: post.get('tbreg_after_submit') })); dom.window.close();
+});
+test('blur nativo al ocultar el selector no reentra en el cierre ni pierde el foco y anuncio', () => {
+	const { dom, w, d } = setup([textField]); d.querySelector('[data-tab="notifications"]').click();
+	const picker = d.getElementById('tbreg-merge-picker'); const home = picker.parentElement;
+	d.querySelector('[data-tbreg-merge-target="tbreg-admin-subject"]').click(); let calls = 0; const append = home.append.bind(home);
+	home.append = (...nodes) => {
+		assert.equal(++calls, 1, 'No debe haber un segundo cierre desde blur');
+		picker.dispatchEvent(new w.FocusEvent('focusout', { bubbles: true, relatedTarget: null })); append(...nodes);
+	};
+	d.querySelector('.tbreg-merge-choice').click();
+	assert.equal(calls, 1); assert.equal(d.activeElement.id, 'tbreg-admin-subject'); assert.equal(picker.hidden, true);
+	assert.equal(d.getElementById('tbreg-admin-subject').value, '{event_name}'); assert.equal(d.getElementById('tbreg-merge-status').textContent, 'Dato insertado: Nombre del evento.'); dom.window.close();
+});

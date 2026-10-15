@@ -109,6 +109,67 @@ final class RepositoriesTest extends TestCase {
 		);
 	}
 
+	private function conditional_settings(): array {
+		return array(
+			'capacity' => 0, 'waitlist' => true, 'pdf_enabled' => false,
+			'receipt_text' => 'Segunda página guardada', 'success_message' => 'Mensaje guardado',
+			'redirect_url' => 'https://example.test/gracias',
+			'notify_admin' => array( 'enabled' => false, 'to' => 'qa@example.test', 'subject' => 'Alta {event_name}' ),
+			'confirm_attendee' => array( 'enabled' => false, 'subject' => 'Gracias {entry_id}', 'body' => '<p>Hola {field:f_name}</p>' ),
+		);
+	}
+
+	public function test_editor_inactive_settings_and_after_submit_action(): void {
+		$form = $this->form( $this->conditional_settings() );
+		$input = $this->editor_input( $form ); $input['tbreg_after_submit'] = 'redirect';
+		$editor = new FormEditorPage( $this->forms ); $saved = $editor->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$this->assertSame( $form->settings(), $saved->settings() );
+		$_GET['id'] = (string) $saved->id(); ob_start(); $editor->render(); $html = ob_get_clean();
+		$this->assertSame( 7, substr_count( $html, 'class="tbreg-settings-card postbox"' ) );
+		$this->assertSame( 3, substr_count( $html, 'data-tbreg-merge-target=' ) );
+		$this->assertStringContainsString( 'El envío de correos llega en la próxima versión', $html );
+		$this->assertStringNotContainsString( 'notify_admin][body]', $html );
+		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
+		if ( $directory && is_dir( $directory ) ) {
+			file_put_contents( $directory . '/editor-settings.html', $html );
+			file_put_contents( $directory . '/settings-fields.json', wp_json_encode( $saved->toArray()['fields'] ) );
+		}
+		$input = $this->editor_input( $saved ); $input['tbreg_after_submit'] = 'message';
+		$saved = $editor->save( $input ); $this->assertInstanceOf( Form::class, $saved );
+		$this->assertSame( '', $saved->settings()['redirect_url'] );
+		$expected = $form->settings(); $expected['redirect_url'] = '';
+		$this->assertSame( $expected, $saved->settings() );
+		$input = $this->editor_input( $saved ); $input['tbreg_after_submit'] = 'redirect';
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		foreach ( array( 'invalid', array( 'redirect' ) ) as $mode ) {
+			$input['tbreg_after_submit'] = $mode;
+			$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		}
+		$this->assertSame( $expected, $this->forms->find( $saved->id() )->settings() );
+	}
+
+	public function test_editor_notification_tokens_from_dom_persist_while_disabled(): void {
+		$form = $this->form( $this->conditional_settings() ); $input = $this->editor_input( $form );
+		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
+		if ( $directory && is_file( $directory . '/dom-settings-post.json' ) ) {
+			$dom = json_decode( file_get_contents( $directory . '/dom-settings-post.json' ), true, 512, JSON_THROW_ON_ERROR );
+			$input['tbreg_settings'] = $dom['settings']; $input['tbreg_after_submit'] = $dom['mode'];
+		} else {
+			$input['tbreg_after_submit'] = 'redirect';
+			$input['tbreg_settings']['notify_admin']['subject'] = 'Alta {event_name}{field:f_name}';
+			$input['tbreg_settings']['confirm_attendee']['body'] = '<p>Hola {field:f_name}</p>{all_fields}';
+		}
+		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$expected = $form->settings();
+		$expected['notify_admin']['subject'] .= '{field:f_name}';
+		$expected['confirm_attendee']['body'] .= '{all_fields}';
+		$this->assertSame( $expected, $saved->settings() );
+		$this->assertSame( $expected, $this->forms->find( $saved->id() )->settings() );
+		$this->assertArrayNotHasKey( 'tbreg_after_submit', $saved->settings() );
+	}
+
 	public function test_editor_conditional_options_roundtrip_preserves_canonical_json(): void {
 		$template = \Codwelt\ToolsBoxRegistros\Admin\LanguageTemplate::get();
 		$form = $this->forms->save( Form::fromArray( array( 'title' => 'Idiomas QA', 'fields' => $template['fields'], 'settings' => $template['settings'] ) ) );

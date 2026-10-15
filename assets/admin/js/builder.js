@@ -81,6 +81,25 @@
 			if (input && output) output.textContent = input.value ? input.value.replace('T', ' ').slice(0, 16) : labels.noDate;
 		}
 	};
+	const updateSettingsUI = () => {
+		const setting = name => form.elements.namedItem('tbreg_settings[' + name + ']');
+		const mode = form.querySelector('[name="tbreg_after_submit"]:checked')?.value;
+		const visible = {
+			waitlist: Number(setting('capacity')?.value) > 0,
+			pdf: setting('pdf_enabled')?.checked,
+			message: mode !== 'redirect',
+			redirect: mode === 'redirect',
+			notify_admin: form.elements.namedItem('tbreg_settings[notify_admin][enabled]')?.checked,
+			confirm_attendee: form.elements.namedItem('tbreg_settings[confirm_attendee][enabled]')?.checked
+		};
+		form.querySelectorAll('[data-tbreg-dependent]').forEach(panel => { panel.hidden = !visible[panel.dataset.tbregDependent]; });
+		const url = setting('redirect_url');
+		if (url) { url.disabled = mode === 'message'; url.required = mode === 'redirect'; url.setAttribute('aria-describedby', 'tbreg-redirect-help'); }
+		const capacity = setting('capacity');
+		if (capacity) { capacity.setAttribute('aria-describedby', 'tbreg-capacity-help'); capacity.setAttribute('aria-controls', 'tbreg-waitlist-options'); }
+		const warning = document.getElementById('tbreg-duplicate-email-warning');
+		if (warning) warning.hidden = setting('prevent_duplicates').value !== 'email' || fields.some(field => !field.archived && field.role === 'email');
+	};
 	const newKey = () => {
 		const bytes = new Uint8Array(8);
 		window.crypto.getRandomValues(bytes);
@@ -115,6 +134,7 @@
 			showSaveStatus(labels.changed);
 		}
 		updatePublishSummary();
+		updateSettingsUI();
 		refreshSummaries();
 	};
 	const changedControl = event => { if (!event.target.closest('[data-tbreg-ui]')) sync(); };
@@ -166,6 +186,66 @@
 			tabs[target].focus();
 		});
 	});
+	const mergePicker = document.getElementById('tbreg-merge-picker');
+	const mergeHome = mergePicker.parentElement;
+	const mergeSearch = document.getElementById('tbreg-merge-search');
+	const mergeChoices = document.getElementById('tbreg-merge-choices');
+	const mergeStatus = document.getElementById('tbreg-merge-status');
+	let mergeTrigger = null;
+	let mergeTarget = null;
+	let mergeRange = [0, 0];
+	const closeMergePicker = (restoreFocus = true) => {
+		mergePicker.hidden = true; if (mergePicker.parentElement !== mergeHome) mergeHome.append(mergePicker);
+		if (mergeTrigger) { mergeTrigger.setAttribute('aria-expanded', 'false'); if (restoreFocus) mergeTrigger.focus(); }
+	};
+	const visibleMergeChoices = () => [...mergeChoices.querySelectorAll('button')].filter(node => !node.hidden);
+	const filterMergeChoices = () => {
+		const simplify = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+		const query = simplify(mergeSearch.value.trim());
+		mergeChoices.querySelectorAll('button').forEach(node => { node.hidden = !simplify(node.textContent).includes(query); });
+		mergeChoices.querySelectorAll('section').forEach(group => { group.hidden = ![...group.querySelectorAll('button')].some(node => !node.hidden); });
+		document.getElementById('tbreg-merge-empty').hidden = visibleMergeChoices().length > 0;
+	};
+	const openMergePicker = trigger => {
+		if (mergeTrigger === trigger && !mergePicker.hidden) { closeMergePicker(); return; }
+		closeMergePicker(false); mergeTrigger = trigger; mergeTarget = document.getElementById(trigger.dataset.tbregMergeTarget);
+		mergeRange = [mergeTarget.selectionStart ?? mergeTarget.value.length, mergeTarget.selectionEnd ?? mergeTarget.value.length];
+		mergeChoices.replaceChildren();
+		const groups = [
+			[labels.mergeGeneral, [[labels.mergeEvent, '{event_name}'], [labels.mergeEntry, '{entry_id}'], [labels.mergeAll, '{all_fields}']]],
+			[labels.mergeFields, fields.filter(field => !field.archived && !['heading', 'photo'].includes(field.type)).map(field => [field.label, '{field:' + field.key + '}'])]
+		];
+		groups.forEach(([heading, choices]) => {
+			if (!choices.length) return;
+			const group = el('section'); group.append(el('h4', heading));
+			choices.forEach(([text, token]) => group.append(button(text, () => {
+				mergeTarget.setRangeText(token, ...mergeRange, 'end');
+				closeMergePicker(false); mergeTarget.focus(); mergeTarget.dispatchEvent(new Event('input', { bubbles: true }));
+				mergeStatus.textContent = labels.mergeInserted.replace('%s', text);
+			}, 'button tbreg-merge-choice')));
+			mergeChoices.append(group);
+		});
+		trigger.closest('.tbreg-merge-control').append(mergePicker); mergePicker.hidden = false;
+		trigger.setAttribute('aria-expanded', 'true'); mergeSearch.value = ''; filterMergeChoices(); mergeSearch.focus();
+	};
+	form.querySelectorAll('[data-tbreg-merge-target]').forEach(trigger => {
+		trigger.hidden = false;
+		trigger.addEventListener('click', () => openMergePicker(trigger));
+		trigger.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); openMergePicker(trigger); visibleMergeChoices()[0]?.focus(); } });
+	});
+	mergeSearch.addEventListener('input', filterMergeChoices);
+	document.getElementById('tbreg-merge-close').addEventListener('click', () => closeMergePicker());
+	mergePicker.addEventListener('keydown', event => {
+		if (event.key === 'Escape') { event.preventDefault(); closeMergePicker(); return; }
+		const choices = visibleMergeChoices(); const index = choices.indexOf(document.activeElement);
+		if (event.key === 'Enter' && event.target === mergeSearch) { event.preventDefault(); choices[0]?.click(); return; }
+		if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key) || (index < 0 && !['ArrowUp', 'ArrowDown'].includes(event.key))) return;
+		event.preventDefault(); if (!choices.length) return;
+		const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : index < 0 ? (event.key === 'ArrowUp' ? choices.length - 1 : 0) : (index + (event.key === 'ArrowUp' ? -1 : 1) + choices.length) % choices.length;
+		choices[next].focus();
+	});
+	mergePicker.addEventListener('focusout', event => { if (!mergePicker.hidden && !mergePicker.contains(event.relatedTarget) && event.relatedTarget !== mergeTrigger) closeMergePicker(false); });
+	document.addEventListener('click', event => { if (!mergePicker.hidden && !mergePicker.contains(event.target) && !mergeTrigger.contains(event.target)) closeMergePicker(false); });
 	const control = (parent, title, value, update, choices, type = 'text') => {
 		const wrapper = el('label', undefined, 'tbreg-control');
 		wrapper.append(el('span', title));

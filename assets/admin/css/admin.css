@@ -220,3 +220,33 @@
 .tbreg-rule-chip input[type="checkbox"] { position: relative; }
 .tbreg-rule-chip input[type="checkbox"]:checked { background: #2271b1; border-color: #2271b1; }
 .tbreg-rule-chip input[type="checkbox"]:checked::before { content: ""; display: block; position: absolute; float: none; box-sizing: content-box; width: 4px; height: 8px; left: 4px; top: 0; margin: 0; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+
+/* Configuración y notificaciones agrupadas por tema. */
+.tbreg-settings-card { padding: 20px; margin: 0 0 20px; border-radius: 4px; min-width: 0; }
+.tbreg-settings-card > h2 { margin: 0 0 8px; font-size: 16px; }
+.tbreg-settings-card > .description { margin: 0 0 18px; }
+.tbreg-settings-card .tbreg-settings-grid { align-items: start; }
+.tbreg-settings-card .tbreg-checkbox { min-height: 32px; }
+.tbreg-settings-card .tbreg-control input[type="checkbox"] { flex-shrink: 0; }
+.tbreg-settings-card [data-tbreg-dependent] { min-width: 0; }
+.tbreg-settings-card #tbreg-capacity-help { margin-top: -4px; }
+.tbreg-after-mode { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 18px; }
+.tbreg-after-mode label { display: inline-flex; gap: 6px; align-items: center; }
+.tbreg-after-mode input { margin: 0; }
+.tbreg-merge-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; margin-top: 16px; }
+.tbreg-merge-control > .tbreg-control { grid-column: 1 / -1; margin-bottom: 0; }
+.tbreg-merge-control > button { grid-column: 2; }
+.tbreg-merge-picker { grid-column: 1 / -1; padding: 14px; border: 1px solid #8c8f94; background: #fff; border-radius: 4px; box-shadow: 0 3px 8px #0002; }
+.tbreg-merge-picker h3 { margin: 0; }
+.tbreg-merge-picker label { display: block; margin: 12px 0 6px; font-weight: 600; }
+.tbreg-merge-picker input[type="search"] { width: 100%; max-width: 100%; }
+#tbreg-merge-choices { max-height: 320px; overflow: auto; margin-top: 10px; }
+#tbreg-merge-choices h4 { margin: 10px 0 6px; }
+.tbreg-merge-choice.button { display: block; width: 100%; text-align: left; white-space: normal; padding: 6px 10px; margin-top: 3px; }
+.tbreg-merge-picker button:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
+#tbreg-merge-status:empty { margin: 0; }
+@media (max-width: 600px) {
+ .tbreg-settings-card { padding: 16px; }
+ .tbreg-merge-control { grid-template-columns: minmax(0, 1fr); }
+ .tbreg-merge-control > button { grid-column: 1; justify-self: start; }
+}

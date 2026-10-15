@@ -124,7 +124,7 @@ final class FormEditorPage {
 					'description' => $input['tbreg_description'] ?? '',
 					'status'      => $input['tbreg_status'] ?? 'draft',
 					'fields'      => $fields,
-					'settings'    => $this->settings_input( $input['tbreg_settings'] ?? array() ),
+					'settings'    => $this->settings_input( $input['tbreg_settings'] ?? array(), $input['tbreg_after_submit'] ?? null ),
 				)
 			);
 			return $this->forms->save( $form, $id > 0 ? $input['tbreg_revision'] : null );
@@ -141,12 +141,23 @@ final class FormEditorPage {
 	 * Convierte exclusivamente controles HTML conocidos a los tipos del esquema.
 	 *
 	 * @param mixed $raw Ajustes recibidos.
+	 * @param mixed $mode Acción de interfaz, sin persistir en el esquema.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException Si un control contiene datos inválidos.
 	 */
-	private function settings_input( mixed $raw ): array {
+	private function settings_input( mixed $raw, mixed $mode = null ): array {
 		if ( ! is_array( $raw ) ) {
 			throw new \InvalidArgumentException( esc_html__( 'La configuración no es válida.', 'toolsbox-registros' ) );
+		}
+		if ( null !== $mode ) {
+			if ( ! in_array( $mode, array( 'message', 'redirect' ), true ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'La acción después de inscribirse no es válida.', 'toolsbox-registros' ) );
+			}
+			if ( 'message' === $mode ) {
+				$raw['redirect_url'] = '';
+			} elseif ( ! is_string( $raw['redirect_url'] ?? null ) || '' === esc_url_raw( trim( $raw['redirect_url'] ) ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'Escribe la URL de la página de redirección.', 'toolsbox-registros' ) );
+			}
 		}
 		foreach ( array( 'event', 'notify_admin', 'confirm_attendee' ) as $name ) {
 			if ( isset( $raw[ $name ] ) && ! is_array( $raw[ $name ] ) ) {
@@ -382,30 +393,69 @@ final class FormEditorPage {
 							<section id="tbreg-archived" hidden><h2><?php esc_html_e( 'Campos archivados', 'toolsbox-registros' ); ?></h2><p class="description"><?php esc_html_e( 'Sus valores anteriores se conservan para las inscripciones y la exportación.', 'toolsbox-registros' ); ?></p><ul></ul></section>
 					</div>
 				</section>
-				<section id="tbreg-panel-settings" role="tabpanel" aria-labelledby="tbreg-tab-settings" class="tbreg-panel tbreg-settings-grid" hidden>
+				<?php
+				$this->settings_panel( $data );
+				$this->notifications_panel( $settings );
+				?>
+				</div>
+				</div>
+				<div class="tbreg-mobile-savebar"><button type="submit" class="button button-primary" data-tbreg-save><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span data-tbreg-save-status aria-hidden="true"></span></div>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Agrupa los ajustes existentes sin cambiar el esquema guardado.
+	 *
+	 * @param array<string,mixed> $data Formulario.
+	 * @return void
+	 */
+	private function settings_panel( array $data ): void {
+		$settings = $data['settings'];
+		?>
+		<section id="tbreg-panel-settings" role="tabpanel" aria-labelledby="tbreg-tab-settings" class="tbreg-panel" hidden>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-event-title">
+				<h2 id="tbreg-event-title"><?php esc_html_e( 'Información del evento', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Describe la actividad a la que se inscribirán las personas.', 'toolsbox-registros' ); ?></p>
+				<div class="tbreg-settings-grid">
+				<?php
+				$this->control( 'tbreg_description', __( 'Descripción', 'toolsbox-registros' ), $data['description'], 'textarea' );
+				$this->control( 'tbreg_settings[event][name]', __( 'Nombre del evento', 'toolsbox-registros' ), $settings['event']['name'] );
+				$this->control( 'tbreg_settings[event][location]', __( 'Lugar o enlace del evento', 'toolsbox-registros' ), $settings['event']['location'] );
+				$this->select_control(
+					'tbreg_settings[event][modality]',
+					__( 'Modalidad', 'toolsbox-registros' ),
+					$settings['event']['modality'],
+					array(
+						'presencial' => __( 'Presencial', 'toolsbox-registros' ),
+						'virtual'    => __( 'Virtual', 'toolsbox-registros' ),
+						'hibrido'    => __( 'Híbrido', 'toolsbox-registros' ),
+					)
+				);
+				$this->control( 'tbreg_settings[event][starts_at]', __( 'Inicio del evento', 'toolsbox-registros' ), $settings['event']['starts_at'], 'datetime-local' );
+				$this->control( 'tbreg_settings[event][ends_at]', __( 'Fin del evento', 'toolsbox-registros' ), $settings['event']['ends_at'], 'datetime-local' );
+				?>
+				</div>
+			</section>
+			<section id="tbreg-registration-settings" class="tbreg-settings-card postbox" aria-labelledby="tbreg-registration-title">
+				<h2 id="tbreg-registration-title"><?php esc_html_e( 'Inscripciones', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Define cuándo se reciben inscripciones y cómo se controlan los cupos.', 'toolsbox-registros' ); ?></p>
+				<div class="tbreg-settings-grid">
+					<div>
+					<?php $this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo', 'toolsbox-registros' ), (string) $settings['capacity'], 'number', 'tbreg-capacity' ); ?>
+					<p id="tbreg-capacity-help" class="description"><?php esc_html_e( '0 = ilimitado.', 'toolsbox-registros' ); ?></p>
+					</div>
+					<div id="tbreg-waitlist-options" data-tbreg-dependent="waitlist">
+					<?php $this->checkbox_control( 'tbreg_settings[waitlist]', __( 'Permitir lista de espera cuando se complete el cupo', 'toolsbox-registros' ), $settings['waitlist'] ); ?>
+					</div>
 					<?php
-					$this->control( 'tbreg_description', __( 'Descripción', 'toolsbox-registros' ), $data['description'], 'textarea' );
-					foreach ( array(
-						'name'      => __( 'Nombre del evento', 'toolsbox-registros' ),
-						'location'  => __( 'Lugar o enlace del evento', 'toolsbox-registros' ),
-						'starts_at' => __( 'Inicio del evento', 'toolsbox-registros' ),
-						'ends_at'   => __( 'Fin del evento', 'toolsbox-registros' ),
-					) as $key => $label ) {
-						$this->control( 'tbreg_settings[event][' . $key . ']', $label, $settings['event'][ $key ], str_ends_with( $key, '_at' ) ? 'datetime-local' : 'text' );
-					}
-					$this->select_control(
-						'tbreg_settings[event][modality]',
-						__( 'Modalidad', 'toolsbox-registros' ),
-						$settings['event']['modality'],
-						array(
-							'presencial' => __( 'Presencial', 'toolsbox-registros' ),
-							'virtual'    => __( 'Virtual', 'toolsbox-registros' ),
-							'hibrido'    => __( 'Híbrido', 'toolsbox-registros' ),
-						)
-					);
-					$this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo (0 = ilimitado)', 'toolsbox-registros' ), (string) $settings['capacity'], 'number', 'tbreg-capacity' );
 					$this->control( 'tbreg_settings[opens_at]', __( 'Apertura de inscripciones', 'toolsbox-registros' ), $settings['opens_at'], 'datetime-local', 'tbreg-opens-at' );
 					$this->control( 'tbreg_settings[closes_at]', __( 'Cierre de inscripciones', 'toolsbox-registros' ), $settings['closes_at'], 'datetime-local' );
+					$this->select_control( 'tbreg_settings[default_status]', __( 'Estado inicial', 'toolsbox-registros' ), $settings['default_status'], FormsListTable::entry_statuses() );
+					?>
+					<div>
+					<?php
 					$this->select_control(
 						'tbreg_settings[prevent_duplicates]',
 						__( 'Control de duplicados', 'toolsbox-registros' ),
@@ -416,47 +466,116 @@ final class FormEditorPage {
 							'document' => __( 'Por documento principal', 'toolsbox-registros' ),
 						)
 					);
-					$this->select_control( 'tbreg_settings[default_status]', __( 'Estado inicial', 'toolsbox-registros' ), $settings['default_status'], FormsListTable::entry_statuses() );
-					$this->control( 'tbreg_settings[submit_label]', __( 'Texto del botón de envío', 'toolsbox-registros' ), $settings['submit_label'] );
-					$this->control( 'tbreg_settings[success_message]', __( 'Mensaje de éxito', 'toolsbox-registros' ), $settings['success_message'], 'textarea' );
-					$this->control( 'tbreg_settings[redirect_url]', __( 'Redirección después de inscribirse', 'toolsbox-registros' ), $settings['redirect_url'], 'url' );
-					$this->control( 'tbreg_settings[consent_text]', __( 'Texto de autorización de tratamiento de datos', 'toolsbox-registros' ), $settings['consent_text'], 'textarea' );
-					$this->checkbox_control( 'tbreg_settings[pdf_enabled]', __( 'Ofrecer PDF al cliente al completar la inscripción', 'toolsbox-registros' ), $settings['pdf_enabled'] );
-					$this->control( 'tbreg_settings[receipt_text]', __( 'Texto de la segunda página del PDF', 'toolsbox-registros' ), $settings['receipt_text'], 'textarea' );
-					$this->checkbox_control( 'tbreg_settings[waitlist]', __( 'Permitir lista de espera cuando se complete el cupo', 'toolsbox-registros' ), $settings['waitlist'] );
-					$this->checkbox_control( 'tbreg_settings[require_login]', __( 'Requerir inicio de sesión para inscribirse', 'toolsbox-registros' ), $settings['require_login'] );
 					?>
-					<?php
-					$this->select_control(
-						'tbreg_settings[captcha]',
-						__( 'Verificación antispam adicional', 'toolsbox-registros' ),
-						$settings['captcha'],
-						array(
-							'none'      => __( 'Sin captcha adicional', 'toolsbox-registros' ),
-							'turnstile' => __( 'Cloudflare Turnstile', 'toolsbox-registros' ),
-							'recaptcha' => __( 'Google reCAPTCHA v2', 'toolsbox-registros' ),
-						)
-					);
-					?>
-					<p class="description tbreg-full"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Las fechas de este formulario se configuran en la zona horaria del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?></p>
-				</section>
-				<section id="tbreg-panel-notifications" role="tabpanel" aria-labelledby="tbreg-tab-notifications" class="tbreg-panel tbreg-settings-grid" hidden>
-					<?php
-					$this->checkbox_control( 'tbreg_settings[notify_admin][enabled]', __( 'Avisar al administrador', 'toolsbox-registros' ), $settings['notify_admin']['enabled'] );
-					$this->control( 'tbreg_settings[notify_admin][to]', __( 'Destinatarios (correos separados por coma)', 'toolsbox-registros' ), $settings['notify_admin']['to'] );
-					$this->control( 'tbreg_settings[notify_admin][subject]', __( 'Asunto para el administrador', 'toolsbox-registros' ), $settings['notify_admin']['subject'] );
-					$this->checkbox_control( 'tbreg_settings[confirm_attendee][enabled]', __( 'Confirmar al inscrito por correo', 'toolsbox-registros' ), $settings['confirm_attendee']['enabled'] );
-					$this->control( 'tbreg_settings[confirm_attendee][subject]', __( 'Asunto para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['subject'] );
-					$this->control( 'tbreg_settings[confirm_attendee][body]', __( 'Mensaje para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['body'], 'textarea' );
-					?>
-					<p class="description tbreg-full"><?php esc_html_e( 'Puedes usar {field:KEY}, {event_name} y {entry_id}. El envío de correos estará disponible en una próxima actualización.', 'toolsbox-registros' ); ?></p>
-				</section>
+					<p id="tbreg-duplicate-email-warning" class="tbreg-warning" role="status" hidden><?php esc_html_e( 'Para controlar duplicados por correo, asigna el rol Correo principal a un campo activo en Campos → Avanzado.', 'toolsbox-registros' ); ?></p>
+					</div>
+					<?php $this->checkbox_control( 'tbreg_settings[require_login]', __( 'Requerir inicio de sesión para inscribirse', 'toolsbox-registros' ), $settings['require_login'] ); ?>
 				</div>
+				<p class="description"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Las fechas de este formulario se configuran en la zona horaria del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?>
+				<?php if ( in_array( wp_timezone_string(), array( 'UTC', '+00:00', 'Etc/UTC', 'GMT', 'Etc/GMT' ), true ) && current_user_can( 'manage_options' ) ) : ?>
+					<a href="<?php echo esc_url( admin_url( 'options-general.php#timezone_string' ) ); ?>"><?php esc_html_e( 'Configurar zona horaria', 'toolsbox-registros' ); ?></a>
+				<?php endif; ?></p>
+			</section>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-after-title">
+				<h2 id="tbreg-after-title"><?php esc_html_e( 'Después de inscribirse', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Elige qué verá la persona al completar su inscripción.', 'toolsbox-registros' ); ?></p>
+				<fieldset class="tbreg-after-mode"><legend class="screen-reader-text"><?php esc_html_e( 'Acción después de inscribirse', 'toolsbox-registros' ); ?></legend>
+					<label><input type="radio" name="tbreg_after_submit" value="message" aria-controls="tbreg-success-options" <?php checked( '' === $settings['redirect_url'] ); ?>> <?php esc_html_e( 'Mostrar mensaje', 'toolsbox-registros' ); ?></label>
+					<label><input type="radio" name="tbreg_after_submit" value="redirect" aria-controls="tbreg-redirect-options" <?php checked( '' !== $settings['redirect_url'] ); ?>> <?php esc_html_e( 'Redirigir a una página', 'toolsbox-registros' ); ?></label>
+				</fieldset>
+				<div id="tbreg-success-options" data-tbreg-dependent="message"><?php $this->control( 'tbreg_settings[success_message]', __( 'Mensaje de éxito', 'toolsbox-registros' ), $settings['success_message'], 'textarea' ); ?></div>
+				<div id="tbreg-redirect-options" data-tbreg-dependent="redirect"><?php $this->control( 'tbreg_settings[redirect_url]', __( 'Redirección después de inscribirse', 'toolsbox-registros' ), $settings['redirect_url'], 'url' ); ?></div>
+				<p id="tbreg-redirect-help" class="description"><?php esc_html_e( 'Puedes alternar sin perder la URL antes de guardar. Al guardar «Mostrar mensaje», se elimina la redirección.', 'toolsbox-registros' ); ?></p>
+				<?php $this->control( 'tbreg_settings[submit_label]', __( 'Texto del botón de envío', 'toolsbox-registros' ), $settings['submit_label'] ); ?>
+			</section>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-pdf-title">
+				<h2 id="tbreg-pdf-title"><?php esc_html_e( 'Comprobante en PDF', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Ofrece un comprobante descargable al completar la inscripción.', 'toolsbox-registros' ); ?></p>
+				<?php $this->checkbox_control( 'tbreg_settings[pdf_enabled]', __( 'Ofrecer PDF al inscrito', 'toolsbox-registros' ), $settings['pdf_enabled'], 'tbreg-pdf-options' ); ?>
+				<div id="tbreg-pdf-options" data-tbreg-dependent="pdf">
+					<?php $this->control( 'tbreg_settings[receipt_text]', __( 'Texto de la segunda página del PDF', 'toolsbox-registros' ), $settings['receipt_text'], 'textarea' ); ?>
+					<p class="description"><?php esc_html_e( 'Con el PDF activado se muestra el comprobante con su enlace de descarga, en lugar de redirigir automáticamente.', 'toolsbox-registros' ); ?></p>
 				</div>
-				<div class="tbreg-mobile-savebar"><button type="submit" class="button button-primary" data-tbreg-save><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span data-tbreg-save-status aria-hidden="true"></span></div>
-			</form>
-		</div>
+			</section>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-privacy-title">
+				<h2 id="tbreg-privacy-title"><?php esc_html_e( 'Privacidad y seguridad', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Configura la autorización de datos y la verificación adicional contra envíos automáticos.', 'toolsbox-registros' ); ?></p>
+				<?php
+				$this->control( 'tbreg_settings[consent_text]', __( 'Texto de autorización de tratamiento de datos', 'toolsbox-registros' ), $settings['consent_text'], 'textarea' );
+				$this->select_control(
+					'tbreg_settings[captcha]',
+					__( 'Verificación antispam adicional', 'toolsbox-registros' ),
+					$settings['captcha'],
+					array(
+						'none'      => __( 'Sin captcha adicional', 'toolsbox-registros' ),
+						'turnstile' => __( 'Cloudflare Turnstile', 'toolsbox-registros' ),
+						'recaptcha' => __( 'Google reCAPTCHA v2', 'toolsbox-registros' ),
+					)
+				);
+				?>
+			</section>
+		</section>
 		<?php
+	}
+
+	/**
+	 * Configuración de correos existente, pendiente del servicio de envío.
+	 *
+	 * @param array<string,mixed> $settings Ajustes guardados.
+	 * @return void
+	 */
+	private function notifications_panel( array $settings ): void {
+		?>
+		<section id="tbreg-panel-notifications" role="tabpanel" aria-labelledby="tbreg-tab-notifications" class="tbreg-panel" hidden>
+			<div class="notice notice-info inline"><p><?php esc_html_e( 'El envío de correos llega en la próxima versión; la configuración ya se guarda.', 'toolsbox-registros' ); ?></p></div>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-notify-admin-title">
+				<h2 id="tbreg-notify-admin-title"><?php esc_html_e( 'Aviso al administrador', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Prepara los destinatarios y el asunto del aviso de una nueva inscripción.', 'toolsbox-registros' ); ?></p>
+				<?php $this->checkbox_control( 'tbreg_settings[notify_admin][enabled]', __( 'Avisar al administrador', 'toolsbox-registros' ), $settings['notify_admin']['enabled'], 'tbreg-notify-admin-options' ); ?>
+				<div id="tbreg-notify-admin-options" data-tbreg-dependent="notify_admin">
+				<?php
+				$this->control( 'tbreg_settings[notify_admin][to]', __( 'Destinatarios (correos separados por coma)', 'toolsbox-registros' ), $settings['notify_admin']['to'] );
+				$this->merge_control( 'tbreg_settings[notify_admin][subject]', __( 'Asunto para el administrador', 'toolsbox-registros' ), $settings['notify_admin']['subject'], 'text', 'tbreg-admin-subject' );
+				?>
+				</div>
+			</section>
+			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-confirm-attendee-title">
+				<h2 id="tbreg-confirm-attendee-title"><?php esc_html_e( 'Confirmación al inscrito', 'toolsbox-registros' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Prepara el correo que recibirá la persona inscrita.', 'toolsbox-registros' ); ?></p>
+				<?php $this->checkbox_control( 'tbreg_settings[confirm_attendee][enabled]', __( 'Confirmar al inscrito por correo', 'toolsbox-registros' ), $settings['confirm_attendee']['enabled'], 'tbreg-confirm-attendee-options' ); ?>
+				<div id="tbreg-confirm-attendee-options" data-tbreg-dependent="confirm_attendee">
+				<?php
+				$this->merge_control( 'tbreg_settings[confirm_attendee][subject]', __( 'Asunto para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['subject'], 'text', 'tbreg-attendee-subject' );
+				$this->merge_control( 'tbreg_settings[confirm_attendee][body]', __( 'Mensaje para el inscrito', 'toolsbox-registros' ), $settings['confirm_attendee']['body'], 'textarea', 'tbreg-attendee-body' );
+				?>
+				</div>
+			</section>
+			<p id="tbreg-merge-status" role="status" aria-live="polite" aria-atomic="true"></p>
+			<div id="tbreg-merge-picker" class="tbreg-merge-picker" role="dialog" aria-labelledby="tbreg-merge-title" data-tbreg-ui hidden>
+				<div class="tbreg-inserter-heading"><h3 id="tbreg-merge-title"><?php esc_html_e( 'Insertar dato', 'toolsbox-registros' ); ?></h3><button type="button" class="button" id="tbreg-merge-close"><?php esc_html_e( 'Cerrar', 'toolsbox-registros' ); ?></button></div>
+				<label for="tbreg-merge-search"><?php esc_html_e( 'Buscar dato por nombre', 'toolsbox-registros' ); ?></label>
+				<input type="search" id="tbreg-merge-search" autocomplete="off">
+				<div id="tbreg-merge-choices"></div>
+				<p id="tbreg-merge-empty" role="status" hidden><?php esc_html_e( 'No se encontraron datos.', 'toolsbox-registros' ); ?></p>
+			</div>
+		</section>
+		<?php
+	}
+
+	/**
+	 * Asunto o mensaje con selector de datos por etiqueta.
+	 *
+	 * @param string $name Nombre del control.
+	 * @param string $label Etiqueta visible.
+	 * @param string $value Texto guardado.
+	 * @param string $type Tipo de control.
+	 * @param string $id Identificador único.
+	 * @return void
+	 */
+	private function merge_control( string $name, string $label, string $value, string $type, string $id ): void {
+		echo '<div class="tbreg-merge-control">';
+		$this->control( $name, $label, $value, $type, $id );
+		echo '<button type="button" class="button" data-tbreg-merge-target="' . esc_attr( $id ) . '" aria-haspopup="dialog" aria-controls="tbreg-merge-picker" aria-expanded="false" hidden>' . esc_html__( 'Insertar dato ▾', 'toolsbox-registros' ) . '<span class="screen-reader-text">: ' . esc_html( $label ) . '</span></button></div>';
 	}
 
 	/**
@@ -566,7 +685,7 @@ final class FormEditorPage {
 	private function control( string $name, string $label, string $value, string $type = 'text', string $id = '' ): void {
 		echo '<label class="tbreg-control"><span>' . esc_html( $label ) . '</span>';
 		if ( 'textarea' === $type ) {
-			echo '<textarea name="' . esc_attr( $name ) . '" rows="4">' . esc_textarea( $value ) . '</textarea>';
+			echo '<textarea name="' . esc_attr( $name ) . '"' . ( '' !== $id ? ' id="' . esc_attr( $id ) . '"' : '' ) . ' rows="4">' . esc_textarea( $value ) . '</textarea>';
 		} else {
 			$value = 'datetime-local' === $type ? str_replace( ' ', 'T', $value ) : $value;
 			echo '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '"' . ( '' !== $id ? ' id="' . esc_attr( $id ) . '"' : '' ) . ( 'number' === $type ? ' min="0" step="1"' : '' ) . '>';
@@ -597,9 +716,10 @@ final class FormEditorPage {
 	 * @param string $name Nombre interno.
 	 * @param string $label Etiqueta visible.
 	 * @param bool   $value Estado guardado.
+	 * @param string $controls Panel dependiente.
 	 * @return void
 	 */
-	private function checkbox_control( string $name, string $label, bool $value ): void {
-		echo '<label class="tbreg-control tbreg-checkbox"><input type="checkbox" name="' . esc_attr( $name ) . '" value="1" ' . checked( $value, true, false ) . '><span>' . esc_html( $label ) . '</span></label>';
+	private function checkbox_control( string $name, string $label, bool $value, string $controls = '' ): void {
+		echo '<label class="tbreg-control tbreg-checkbox tbreg-switch"><input type="checkbox" role="switch" name="' . esc_attr( $name ) . '" value="1"' . ( '' !== $controls ? ' aria-controls="' . esc_attr( $controls ) . '"' : '' ) . ' ' . checked( $value, true, false ) . '><span>' . esc_html( $label ) . '</span></label>';
 	}
 }

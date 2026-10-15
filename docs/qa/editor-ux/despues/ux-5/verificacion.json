@@ -1,0 +1,93 @@
+{
+  "phase": "UX-5",
+  "date": "2026-10-15",
+  "version": "0.3.6",
+  "form_id": 5,
+  "form_5_unchanged": true,
+  "configuration_cards": 5,
+  "notification_cards": 2,
+  "notifications_delivery_implemented": false,
+  "schema_changed": false,
+  "post_ui_control": "tbreg_after_submit (no se persiste en settings)",
+  "redirect_mode": "URL conservada al alternar; guardar message elimina redirect_url explícitamente",
+  "hidden_controls_preserve_values": [
+    "waitlist",
+    "receipt_text",
+    "notify_admin.to",
+    "notify_admin.subject",
+    "confirm_attendee.subject",
+    "confirm_attendee.body",
+    "success_message"
+  ],
+  "responsive": {
+    "settings": [
+      {
+        "viewport": 1400,
+        "document_scroll_width": 1400
+      },
+      {
+        "viewport": 1024,
+        "document_scroll_width": 1024
+      },
+      {
+        "viewport": 782,
+        "document_scroll_width": 782
+      },
+      {
+        "viewport": 375,
+        "document_scroll_width": 375
+      }
+    ],
+    "notifications": [
+      {
+        "viewport": 1400,
+        "document_scroll_width": 1400
+      },
+      {
+        "viewport": 1024,
+        "document_scroll_width": 1024
+      },
+      {
+        "viewport": 782,
+        "document_scroll_width": 782
+      },
+      {
+        "viewport": 375,
+        "document_scroll_width": 375
+      }
+    ]
+  },
+  "native_qa": {
+    "temporary_form_id": 9,
+    "temporary_form_deleted": true,
+    "cmd_s_noop_raw_fields_and_settings_identical": true,
+    "notification_merge_targets_verified": [
+      "admin_subject",
+      "attendee_subject",
+      "attendee_body"
+    ],
+    "merge_keyboard": [
+      "search+Enter inserts, restores focus and announces",
+      "Escape closes and restores trigger focus"
+    ],
+    "native_focusout_regression_fixed": true,
+    "notifications_disabled_values_persist": true,
+    "pdf_and_waitlist_values_preserved": true,
+    "message_mode_cleared_redirect_url": true,
+    "fields_preserved": 18
+  },
+  "verification": {
+    "TBREG_RUN_INTEGRATION": "1",
+    "php_tests": 152,
+    "php_assertions": 1461,
+    "php_skipped": 0,
+    "dom_tests": 60,
+    "dom_failed": 0,
+    "phpcs_files": 86,
+    "phpcs_errors": 0,
+    "phpcs_warnings": 0,
+    "activation_debug": true,
+    "table_checksums_and_counts_preserved": true
+  },
+  "deferred": "UX-6 y las dos notas sobre Siempre; envío de correos en Fase 6."
+}
