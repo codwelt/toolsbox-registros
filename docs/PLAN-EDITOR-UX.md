@@ -216,7 +216,7 @@ Se implementa una fase por solicitud, según `AGENTS.md`.
 | Fase | Estado | Verificación |
 |---|---|---|
 | UX-0 | ✅ Completada (2026-10-15), versión 0.3.1 | Configuración y Notificaciones revisadas en Chrome sobre el formulario ID 5, a 1400 y 375 px. Sin comentario visible; casillas nativas cuadradas, con etiquetas a la derecha y sin desbordes horizontales. |
-| UX-1 | ⬜ Pendiente | Encabezado y shortcode. |
+| UX-1 | ✅ Completada (2026-10-15), versión 0.3.2 | Insignia del estado guardado, enlaces por permisos, shortcode bajo Nombre con copia por teclado y slug editable en línea. Chrome a 1400/375 px sin desbordes; 146 PHP / 1.392 aserciones con integración activa y 34 DOM. |
 | UX-2 | ⬜ Pendiente | Barra lateral y guardado. |
 | UX-3 | ⬜ Pendiente | Lista e inserción de campos. |
 | UX-4 | ⬜ Pendiente | Tarjeta abierta y opciones. |
@@ -229,3 +229,14 @@ Notas de UX-0:
 - Sin cambios del JSON, los formularios guardados o el formulario público. La versión 0.3.1 invalida la caché del CSS administrativo.
 - **`TBREG_RUN_INTEGRATION=1`: 145 pruebas PHP / 1.370 aserciones**, sin omisiones; **30 pruebas DOM** correctas. WPCS/PHPCompatibility: 85 archivos sin errores ni avisos. Sintaxis PHP correcta en los dos archivos modificados. Activación, desactivación y reactivación con `WP_DEBUG=1`, sin avisos del plugin y con checksum/contador de las tres tablas conservados.
 - [Capturas posteriores de UX-0](qa/editor-ux/despues/ux-0/): Configuración y Notificaciones completas en ambos tamaños y detalle de casillas en escritorio. Son capturas del administrador local con los avisos existentes de otros plugins; no se descartaron ni se modificó su configuración.
+
+Notas de UX-1:
+- Encabezado con insignia textual del **estado guardado** y colores para Borrador/Publicado/Cerrado. Los enlaces a Inscripciones y Exportar solo aparecen para formularios guardados y usuarios con la capacidad correspondiente; ambos conservan el filtro `form_id`.
+- «Ver inscripciones (n)» cuenta todas las inscripciones del formulario, incluidas canceladas y lista de espera. `entries_count` sigue destinado a los cupos; se reutiliza la consulta de conteo del repositorio, sin cargar respuestas ni modificar tablas.
+- Shortcode único bajo Nombre, fuera de los paneles de pestañas, con etiqueta asociada, botón de copia y anuncio independiente `aria-live`. Se corrigió la copia anterior del editor, que enviaba el ID del input al portapapeles; la copia del listado sigue funcionando por fila. Si Clipboard API no está disponible o rechaza la operación, se selecciona el texto para copiar con el teclado y se anuncia la alternativa.
+- Slug en un `details/summary` nativo con «Editar»: operable con teclado y disponible sin JS. El input conserva su nombre POST, se envía también con el panel cerrado y su resumen se actualiza como texto. En formularios nuevos se indica que hay que guardar para obtener el shortcode. Se mencionan el bloque y el widget de Elementor.
+- El separador nativo `wp-header-end` mantiene los avisos de WordPress fuera del encabezado flexible. El shortcode ocupa una fila completa en móvil para evitar recortar su texto.
+- **`TBREG_RUN_INTEGRATION=1`: 146 pruebas PHP / 1.392 aserciones**, sin omisiones; **34 pruebas DOM** correctas. Una prueba de integración nueva verifica estados, total incluyendo canceladas/espera y permisos. Cuatro pruebas DOM nuevas verifican copia, alternativa manual, listado y slug. Tras el último ajuste del encabezado se repitió el grupo de repositorios: 25 pruebas / 272 aserciones correctas. WPCS/PHPCompatibility: 85 archivos sin errores ni avisos; sintaxis de los cinco PHP y dos JS/CJS modificados correcta.
+- Chrome real, formulario ID 5: Tab → Copiar → Enter anuncia «Shortcode copiado.» sin guardar; `summary` del slug se abre con Enter; el shortcode se mantiene visible desde Configuración y Notificaciones. A 1400 y 375 px, `scrollWidth` coincide con el viewport; en móvil el input muestra el texto completo sin desplazamiento interno. [Capturas](qa/editor-ux/despues/ux-1/) e [informe](qa/editor-ux/despues/ux-1/verificacion.json).
+- Activación, desactivación y reactivación con `WP_DEBUG=1`, sin avisos del plugin y conservando los checksums y contadores de las tres tablas. No se guardó ni publicó el formulario ID 5. Versión 0.3.2 para invalidar la caché de los assets modificados.
+- Se conserva la pestaña Publicar con el selector de estado hasta UX-2, que implementará la barra lateral. Sin cambios del JSON ni del formulario público.

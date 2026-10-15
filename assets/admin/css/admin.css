@@ -2,6 +2,27 @@
 .tbreg-admin [hidden] { display: none !important; }
 .tbreg-title-label { display: block; font-weight: 600; margin: 20px 0 8px; }
 .tbreg-title { max-width: 920px; font-size: 20px; padding: 8px 12px; }
+.tbreg-editor-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.tbreg-editor-heading h1 { margin: 0; }
+.tbreg-status-badge { display: inline-block; background: #f0f0f1; border: 1px solid #c3c4c7; border-radius: 3px; padding: 3px 9px; color: #3c434a; font-size: 13px; font-weight: 600; }
+.tbreg-status-badge[data-status="published"] { background: #edfaef; border-color: #008a20; color: #005c12; }
+.tbreg-status-badge[data-status="closed"] { background: #fcf9e8; border-color: #996800; color: #614200; }
+.tbreg-editor-links { margin-left: auto; display: flex; flex-wrap: wrap; gap: 16px; }
+.tbreg-embed-info { max-width: 920px; margin-top: 16px; }
+.tbreg-shortcode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tbreg-shortcode-row label { font-weight: 600; }
+.tbreg-shortcode-row .tbreg-shortcode { width: 290px; min-width: 0; }
+.tbreg-slug-editor { margin-top: 12px; overflow-wrap: anywhere; }
+.tbreg-slug-editor summary { cursor: pointer; width: fit-content; max-width: 100%; }
+.tbreg-slug-edit-label { margin-left: 6px; color: #135e96; text-decoration: underline; }
+.tbreg-slug-editor label { display: block; margin-block: 12px 6px; font-weight: 600; }
+.tbreg-slug-editor input { max-width: 100%; }
+.tbreg-slug-editor summary:focus-visible { outline: 2px solid #2271b1; outline-offset: 3px; }
+@media (max-width: 600px) {
+	.tbreg-editor-links { flex-basis: 100%; margin-left: 0; }
+	.tbreg-shortcode-row label { flex-basis: 100%; }
+	.tbreg-shortcode-row .tbreg-shortcode { flex: 0 0 100%; width: 100%; box-sizing: border-box; }
+}
 .tbreg-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #c3c4c7; margin-top: 24px; }
 .tbreg-tabs button { background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 14px 18px; font-weight: 600; cursor: pointer; color: #50575e; }
 .tbreg-tabs [aria-selected="true"] { color: #135e96; border-bottom-color: #2271b1; background: #fff; }

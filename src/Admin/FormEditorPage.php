@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Codwelt\ToolsBoxRegistros\Admin;
 
 use Codwelt\ToolsBoxRegistros\Domain\Form;
+use Codwelt\ToolsBoxRegistros\Repository\EntryRepository;
 use Codwelt\ToolsBoxRegistros\Repository\FormRepository;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -28,12 +29,21 @@ final class FormEditorPage {
 	private FormRepository $forms;
 
 	/**
+	 * Repositorio para el total de inscripciones del encabezado.
+	 *
+	 * @var EntryRepository
+	 */
+	private EntryRepository $entries;
+
+	/**
 	 * Inicializa el repositorio del editor.
 	 *
-	 * @param FormRepository|null $forms Repositorio opcional para pruebas.
+	 * @param FormRepository|null  $forms Repositorio opcional para pruebas.
+	 * @param EntryRepository|null $entries Inscripciones opcionales para pruebas.
 	 */
-	public function __construct( ?FormRepository $forms = null ) {
-		$this->forms = $forms ?? new FormRepository();
+	public function __construct( ?FormRepository $forms = null, ?EntryRepository $entries = null ) {
+		$this->forms   = $forms ?? new FormRepository();
+		$this->entries = $entries ?? new EntryRepository();
 	}
 
 	/**
@@ -265,9 +275,33 @@ final class FormEditorPage {
 		$context  = $this->context();
 		$data     = $context['data'];
 		$settings = $data['settings'];
+		$links    = array();
+		foreach ( array( 'entries', 'export' ) as $page ) {
+			$links[ $page ] = add_query_arg(
+				array(
+					'page'    => 'toolsbox-registros-' . $page,
+					'form_id' => $data['id'],
+				),
+				admin_url( 'admin.php' )
+			);
+		}
 		?>
 		<div class="wrap tbreg-admin">
-			<h1><?php echo esc_html( $data['id'] > 0 ? __( 'Editar formulario', 'toolsbox-registros' ) : __( 'Crear formulario', 'toolsbox-registros' ) ); ?></h1>
+			<div class="tbreg-editor-heading">
+				<h1><?php echo esc_html( $data['id'] > 0 ? __( 'Editar formulario', 'toolsbox-registros' ) : __( 'Crear formulario', 'toolsbox-registros' ) ); ?></h1>
+				<span id="tbreg-form-status" class="tbreg-status-badge" data-status="<?php echo esc_attr( $data['status'] ); ?>"><?php echo esc_html( FormsListTable::form_statuses()[ $data['status'] ] ); ?></span>
+				<?php if ( $data['id'] > 0 ) : ?>
+					<nav class="tbreg-editor-links" aria-label="<?php esc_attr_e( 'Inscripciones del formulario', 'toolsbox-registros' ); ?>">
+						<?php if ( current_user_can( 'tbreg_view_entries' ) ) : ?>
+							<a href="<?php echo esc_url( $links['entries'] ); ?>"><?php echo esc_html( sprintf( /* translators: %s: Total de inscripciones del formulario. */ __( 'Ver inscripciones (%s)', 'toolsbox-registros' ), number_format_i18n( $this->entries->count( array( 'form_id' => $data['id'] ) ) ) ) ); ?></a>
+						<?php endif; ?>
+						<?php if ( current_user_can( 'tbreg_export_entries' ) ) : ?>
+							<a href="<?php echo esc_url( $links['export'] ); ?>"><?php esc_html_e( 'Exportar', 'toolsbox-registros' ); ?></a>
+						<?php endif; ?>
+					</nav>
+				<?php endif; ?>
+			</div>
+			<hr class="wp-header-end">
 			<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=toolsbox-registros' ) ); ?>">&larr; <?php esc_html_e( 'Volver a formularios', 'toolsbox-registros' ); ?></a></p>
 			<?php Notices::render(); ?>
 			<noscript><div class="notice notice-warning"><p><?php esc_html_e( 'Activa JavaScript para agregar y ordenar campos. Puedes editar los datos y la configuración del formulario existente.', 'toolsbox-registros' ); ?></p></div></noscript>
@@ -280,6 +314,25 @@ final class FormEditorPage {
 				<?php wp_nonce_field( 'tbreg_save_form', 'tbreg_nonce' ); ?>
 				<label class="tbreg-title-label" for="tbreg-title"><?php esc_html_e( 'Nombre del formulario', 'toolsbox-registros' ); ?></label>
 				<input id="tbreg-title" name="tbreg_title" type="text" class="large-text tbreg-title" maxlength="200" value="<?php echo esc_attr( $data['title'] ); ?>" required>
+				<div class="tbreg-embed-info">
+					<?php if ( $data['id'] > 0 ) : ?>
+						<div class="tbreg-shortcode-row">
+							<label for="tbreg-shortcode"><?php esc_html_e( 'Shortcode', 'toolsbox-registros' ); ?></label>
+							<input type="text" id="tbreg-shortcode" class="tbreg-shortcode" readonly value="<?php echo esc_attr( '[toolsbox_registro id="' . $data['id'] . '"]' ); ?>">
+							<button type="button" class="button" data-tbreg-copy-target="tbreg-shortcode" aria-describedby="tbreg-copy-status"><?php esc_html_e( 'Copiar', 'toolsbox-registros' ); ?></button>
+							<span id="tbreg-copy-status" role="status" aria-live="polite" aria-atomic="true"></span>
+						</div>
+					<?php else : ?>
+						<p><?php esc_html_e( 'Guarda el formulario para obtener su shortcode.', 'toolsbox-registros' ); ?></p>
+					<?php endif; ?>
+					<details class="tbreg-slug-editor">
+						<summary><?php esc_html_e( 'Slug:', 'toolsbox-registros' ); ?> <span id="tbreg-slug-summary"><?php echo esc_html( '' !== $data['slug'] ? $data['slug'] : __( 'Se genera al guardar', 'toolsbox-registros' ) ); ?></span> <span class="tbreg-slug-edit-label"><?php esc_html_e( 'Editar', 'toolsbox-registros' ); ?></span></summary>
+						<label for="tbreg-slug"><?php esc_html_e( 'Slug', 'toolsbox-registros' ); ?></label>
+						<input id="tbreg-slug" type="text" name="tbreg_slug" class="regular-text" value="<?php echo esc_attr( $data['slug'] ); ?>" aria-describedby="tbreg-slug-help">
+						<p id="tbreg-slug-help" class="description"><?php esc_html_e( 'Se guarda con el formulario. Déjalo vacío para generarlo a partir del nombre.', 'toolsbox-registros' ); ?></p>
+					</details>
+					<p class="description"><?php esc_html_e( 'También puedes usar el bloque «ToolsBox Registros» o el widget de Elementor «ToolsBox — Formulario de inscripción». Publica el formulario para recibir inscripciones.', 'toolsbox-registros' ); ?></p>
+				</div>
 				<div class="tbreg-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Editor del formulario', 'toolsbox-registros' ); ?>">
 					<?php
 					foreach ( array(
@@ -388,17 +441,7 @@ final class FormEditorPage {
 				<section id="tbreg-panel-publish" role="tabpanel" aria-labelledby="tbreg-tab-publish" class="tbreg-panel tbreg-settings-grid" hidden>
 					<?php
 					$this->select_control( 'tbreg_status', __( 'Estado del formulario', 'toolsbox-registros' ), $data['status'], FormsListTable::form_statuses() );
-					$this->control( 'tbreg_slug', __( 'Slug', 'toolsbox-registros' ), $data['slug'] );
 					?>
-					<div class="tbreg-full"><h2><?php esc_html_e( 'Shortcode', 'toolsbox-registros' ); ?></h2>
-						<?php if ( $data['id'] > 0 ) : ?>
-							<input type="text" id="tbreg-shortcode" class="regular-text" aria-label="<?php esc_attr_e( 'Shortcode del formulario', 'toolsbox-registros' ); ?>" readonly value="<?php echo esc_attr( '[toolsbox_registro id="' . $data['id'] . '"]' ); ?>">
-							<button type="button" class="button" data-tbreg-copy="tbreg-shortcode"><?php esc_html_e( 'Copiar', 'toolsbox-registros' ); ?></button>
-						<?php else : ?>
-							<p><?php esc_html_e( 'Guarda el formulario para obtener su shortcode.', 'toolsbox-registros' ); ?></p>
-						<?php endif; ?>
-						<p class="description"><?php esc_html_e( 'Publica el formulario para recibir inscripciones e inserta este shortcode o el bloque ToolsBox Registros en una página.', 'toolsbox-registros' ); ?></p>
-					</div>
 				</section>
 				<div class="tbreg-save-bar"><button type="submit" class="button button-primary button-large"><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span id="tbreg-builder-status" role="status" aria-live="polite"></span></div>
 			</form>

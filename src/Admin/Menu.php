@@ -71,7 +71,7 @@ final class Menu {
 	 */
 	public function __construct( ?FormRepository $forms = null, ?EntryRepository $entries = null ) {
 		$this->forms        = $forms ?? new FormRepository();
-		$this->editor       = new FormEditorPage( $this->forms );
+		$this->editor       = new FormEditorPage( $this->forms, $entries );
 		$this->entries_page = new EntriesPage( $entries, $this->forms );
 		$this->entry_detail = new EntryDetailPage( $entries, $this->forms );
 		$this->export_page  = new ExportPage( $this->forms, $entries );
@@ -337,6 +337,7 @@ final class Menu {
 			'changed'         => __( 'Cambios pendientes de guardar.', 'toolsbox-registros' ),
 			'copied'          => __( 'Shortcode copiado.', 'toolsbox-registros' ),
 			'copyManual'      => __( 'Selecciona el shortcode y cópialo con el teclado.', 'toolsbox-registros' ),
+			'slugAutomatic'   => __( 'Se genera al guardar', 'toolsbox-registros' ),
 			'newOption'       => __( 'Nueva opción', 'toolsbox-registros' ),
 			'key'             => __( 'Identificador permanente', 'toolsbox-registros' ),
 			'queryParam'      => __( 'Parámetro de URL (opcional, por ejemplo utm_source)', 'toolsbox-registros' ),

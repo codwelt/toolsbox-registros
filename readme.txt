@@ -4,7 +4,7 @@ Tags: forms, registration, events, export, excel
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.1
+Stable tag: 0.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,12 @@ Sí. Copia la plantilla de templates/ dentro de toolsbox-registros/ en tu tema. 
 No. La desactivación conserva las tablas y los registros existentes.
 
 == Changelog ==
+
+= 0.3.2 =
+
+* Shortcode bajo el nombre del formulario con copia accesible y slug editable en línea.
+* Encabezado con estado y enlaces autorizados a inscripciones y exportación.
+* Corrige la copia del shortcode en el editor y conserva la alternativa manual.
 
 = 0.3.1 =
 

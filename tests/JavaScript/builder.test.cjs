@@ -12,8 +12,8 @@ const wp = path.resolve(plugin, '../../..');
 const html = fs.readFileSync(path.join(fixtureDir, 'editor.html'), 'utf8');
 const config = fs.readFileSync(path.join(fixtureDir, 'builder-config.js'), 'utf8');
 const source = fs.readFileSync(path.join(plugin, 'assets/admin/js/builder.js'), 'utf8');
-function setup(fields = [], used = []) {
-	const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://wordpress.test/wp-admin/' });
+function setup(fields = [], used = [], markup = html) {
+	const dom = new JSDOM(markup, { runScripts: 'outside-only', url: 'https://wordpress.test/wp-admin/' });
 	const w = dom.window;
 	w.confirm = () => true;
 	w.HTMLElement.prototype.scrollIntoView = () => {};
@@ -43,6 +43,59 @@ function setup(fields = [], used = []) {
 	return { dom, w, d, state, click, input, submit };
 }
 const textField = { key: 'f_existing', type: 'text', label: 'Nombre', options: [], width: 'full', role: null, required: false, archived: false, default: '', validation: {} };
+test('shortcode permanece fuera de las pestañas y copia su valor sin enviar el formulario', async () => {
+	const saved = fs.readFileSync(path.join(fixtureDir, 'editor-saved.html'), 'utf8');
+	const { dom, w, d } = setup([], [], saved);
+	const input = d.getElementById('tbreg-shortcode');
+	const copy = d.querySelector('[data-tbreg-copy-target]');
+	const status = d.getElementById('tbreg-copy-status');
+	let copied; let submits = 0;
+	Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async value => { copied = value; } } });
+	d.getElementById('tbreg-editor').addEventListener('submit', () => { submits++; });
+	assert.equal(input.readOnly, true);
+	assert.equal(status.getAttribute('aria-live'), 'polite');
+	for (const tab of d.querySelectorAll('[role="tab"]')) {
+		tab.click(); assert.equal(input.closest('[hidden]'), null);
+		copy.focus(); copy.click(); await new Promise(setImmediate);
+		assert.equal(copied, input.value);
+		assert.match(copied, /^\[toolsbox_registro id="\d+"\]$/);
+		assert.equal(status.textContent, w.tbreg_builder.labels.copied);
+		assert.equal(d.activeElement, copy);
+	}
+	assert.equal(submits, 0); dom.window.close();
+});
+test('portapapeles rechazado o no disponible selecciona el shortcode para copia manual', async () => {
+	for (const available of [true, false]) {
+		const { dom, w, d } = setup([], [], fs.readFileSync(path.join(fixtureDir, 'editor-saved.html'), 'utf8'));
+		if (available) Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async () => { throw new Error('denied'); } } });
+		d.querySelector('[data-tbreg-copy-target]').click(); await new Promise(setImmediate);
+		const input = d.getElementById('tbreg-shortcode');
+		assert.equal(d.activeElement, input); assert.equal(input.selectionStart, 0); assert.equal(input.selectionEnd, input.value.length);
+		assert.equal(d.getElementById('tbreg-copy-status').textContent, w.tbreg_builder.labels.copyManual);
+		dom.window.close();
+	}
+});
+test('copia del listado conserva el shortcode de la fila elegida', async () => {
+	const { dom, w, d } = setup([], [], fs.readFileSync(path.join(fixtureDir, 'forms.html'), 'utf8'));
+	const copied = []; Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async value => { copied.push(value); } } });
+	const buttons = [...d.querySelectorAll('[data-tbreg-copy]')]; assert.ok(buttons.length >= 2);
+	for (const button of buttons.slice(0, 2)) {
+		button.click(); await Promise.resolve(); assert.equal(copied.at(-1), button.dataset.tbregCopy);
+	}
+	assert.notEqual(copied[0], copied[1]); dom.window.close();
+});
+test('slug editable permanece en el POST y actualiza su resumen sin interpretar HTML', () => {
+	const { dom, w, d } = setup();
+	const details = d.querySelector('.tbreg-slug-editor'); const input = d.getElementById('tbreg-slug');
+	assert.equal(d.querySelectorAll('[name="tbreg_slug"]').length, 1);
+	details.open = true; input.value = '<b>nuevo-slug</b>'; input.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(d.getElementById('tbreg-slug-summary').textContent, '<b>nuevo-slug</b>');
+	assert.equal(d.getElementById('tbreg-slug-summary').querySelector('b'), null);
+	details.open = false; assert.equal(new w.FormData(d.getElementById('tbreg-editor')).get('tbreg_slug'), input.value);
+	input.value = ''; input.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(d.getElementById('tbreg-slug-summary').textContent, w.tbreg_builder.labels.slugAutomatic);
+	dom.window.close();
+});
 test('plantilla de idiomas regenera claves y conserva relaciones editables y PDF',()=>{
  const {dom,w,d,state}=setup();d.getElementById('tbreg-template').value='languages';d.getElementById('tbreg-apply-template').click();const fields=state();const keys=new Set(fields.map(field=>field.key));
  assert.equal(fields.length,18);assert.equal(keys.size,18);assert.equal(d.querySelector('[name="tbreg_settings[pdf_enabled]"]').checked,true);

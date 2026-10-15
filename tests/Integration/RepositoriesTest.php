@@ -329,6 +329,8 @@ final class RepositoriesTest extends TestCase {
 		$this->assertStringContainsString( 'name="tbreg_fields"', $html );
 		$this->assertSame( count( Field::TYPES ), substr_count( $html, 'class="button tbreg-add-field"' ) );
 		$this->assertSame( 4, substr_count( $html, 'role="tabpanel"' ) );
+		$this->assertStringContainsString( 'Guarda el formulario para obtener su shortcode.', $html );
+		$this->assertStringNotContainsString( 'data-tbreg-copy-target', $html );
 		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
 		if ( false !== $directory && is_dir( $directory ) ) {
 			file_put_contents( $directory . '/editor.html', $html );
@@ -337,6 +339,45 @@ final class RepositoriesTest extends TestCase {
 		ob_start(); $menu->render_forms(); $output = ob_get_clean();
 		$this->assertStringContainsString( 'tbreg_form_action', $output );
 		$this->assertStringContainsString( '[toolsbox_registro', $output );
+		if ( $directory && is_dir( $directory ) ) file_put_contents( $directory . '/forms.html', $output );
+	}
+
+	public function test_editor_header_counts_all_entries_and_respects_link_capabilities(): void {
+		$form = $this->form();
+		$this->entry( $form );
+		$this->entry( $form, 'cancelada@example.test', array(), array( 'status' => 'cancelled' ) );
+		$this->entry( $form, 'espera@example.test', array(), array( 'status' => 'waitlist' ) );
+		$_GET = array( 'id' => (string) $form->id() );
+		$editor = new FormEditorPage( $this->forms, $this->entries );
+		foreach ( array( 'draft' => 'Borrador', 'published' => 'Publicado', 'closed' => 'Cerrado' ) as $status => $label ) {
+			$data = $this->forms->find( $form->id() )->toArray();
+			$data['status'] = $status;
+			$this->forms->save( Form::fromArray( $data ) );
+			ob_start(); $editor->render(); $html = ob_get_clean();
+			$this->assertStringContainsString( 'data-status="' . $status . '">' . $label, $html );
+		}
+		$this->assertSame( 1, $this->forms->find( $form->id() )->get( 'entries_count' ) );
+		$this->assertSame( 3, $this->entries->count( array( 'form_id' => $form->id() ) ) );
+		$this->assertSame( 1, $this->entries->count( array( 'form_id' => $form->id(), 'status' => 'waitlist' ) ) );
+		$this->assertStringContainsString( 'Ver inscripciones (3)', $html );
+		$this->assertStringContainsString( 'page=toolsbox-registros-entries&#038;form_id=' . $form->id(), $html );
+		$this->assertStringContainsString( 'page=toolsbox-registros-export&#038;form_id=' . $form->id(), $html );
+		$this->assertSame( 1, substr_count( $html, 'name="tbreg_slug"' ) );
+		$this->assertSame( 1, substr_count( $html, 'id="tbreg-shortcode"' ) );
+		$this->assertLessThan( strpos( $html, 'role="tablist"' ), strpos( $html, 'id="tbreg-shortcode"' ) );
+		$this->assertStringContainsString( '[toolsbox_registro id=&quot;' . $form->id() . '&quot;]', $html );
+		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
+		if ( $directory && is_dir( $directory ) ) file_put_contents( $directory . '/editor-saved.html', $html );
+		$deny = static function ( array $caps ): array { $caps['tbreg_view_entries'] = false; $caps['tbreg_export_entries'] = false; return $caps; };
+		add_filter( 'user_has_cap', $deny, 99 );
+		try {
+			ob_start(); $editor->render(); $restricted = ob_get_clean();
+			$this->assertStringNotContainsString( 'Ver inscripciones', $restricted );
+			$this->assertStringNotContainsString( '>Exportar</a>', $restricted );
+			$this->assertStringContainsString( 'id="tbreg-shortcode"', $restricted );
+		} finally {
+			remove_filter( 'user_has_cap', $deny, 99 );
+		}
 	}
 
 	public static function tearDownAfterClass(): void {

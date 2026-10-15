@@ -16,14 +16,15 @@
 		node.addEventListener('click', callback);
 		return node;
 	};
-	document.querySelectorAll('[data-tbreg-copy]').forEach(node => {
+	document.querySelectorAll('[data-tbreg-copy], [data-tbreg-copy-target]').forEach(node => {
 		node.addEventListener('click', async () => {
 			const status = document.getElementById('tbreg-copy-status') || document.getElementById('tbreg-builder-status');
+			const input = node.dataset.tbregCopyTarget ? document.getElementById(node.dataset.tbregCopyTarget) : node.parentElement.querySelector('input');
+			if (status) status.textContent = '';
 			try {
-				await navigator.clipboard.writeText(node.dataset.tbregCopy);
+				await navigator.clipboard.writeText(input ? input.value : node.dataset.tbregCopy);
 				if (status) status.textContent = labels.copied;
 			} catch (error) {
-				const input = node.parentElement.querySelector('input');
 				if (input) { input.focus(); input.select(); }
 				if (status) status.textContent = labels.copyManual;
 			}
@@ -31,6 +32,11 @@
 	});
 	const form = document.getElementById('tbreg-editor');
 	if (!form) return;
+	const slugInput = document.getElementById('tbreg-slug');
+	const slugSummary = document.getElementById('tbreg-slug-summary');
+	if (slugInput && slugSummary) slugInput.addEventListener('input', () => {
+		slugSummary.textContent = slugInput.value || labels.slugAutomatic;
+	});
 	const list = document.getElementById('tbreg-fields');
 	const hidden = document.getElementById('tbreg-fields-json');
 	const used = new Set(config.used);

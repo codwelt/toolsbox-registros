@@ -441,6 +441,17 @@ final class EntryRepository extends Repository {
 	}
 
 	/**
+	 * Cuenta todas las inscripciones que coinciden, incluidas canceladas y en espera.
+	 *
+	 * @param array<string,mixed> $filters Filtros de lectura.
+	 * @return int
+	 */
+	public function count( array $filters = array() ): int {
+		list( $where, $values ) = $this->where( $filters );
+		return (int) $this->scalar( 'SELECT COUNT(*) FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where, $values );
+	}
+
+	/**
 	 * Devuelve las inscripciones paginadas y el total filtrado.
 	 *
 	 * @param array<string,mixed> $filters Filtros, per_page y page.
@@ -448,7 +459,7 @@ final class EntryRepository extends Repository {
 	 */
 	public function paginate( array $filters = array() ): array {
 		list( $where, $values ) = $this->where( $filters );
-		$total                  = (int) $this->scalar( 'SELECT COUNT(*) FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where, $values );
+		$total                  = $this->count( $filters );
 		$limit                  = min( 200, max( 1, (int) ( $filters['per_page'] ?? 20 ) ) );
 		$page                   = max( 1, (int) ( $filters['page'] ?? 1 ) );
 		$sort                   = in_array( $filters['orderby'] ?? '', array( 'id', 'created_at', 'email', 'status' ), true ) ? $filters['orderby'] : 'id';
