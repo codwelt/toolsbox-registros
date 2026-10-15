@@ -84,6 +84,8 @@ final class Menu {
 	 */
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
+		add_action( 'admin_head', array( $this, 'hide_entry_detail' ) );
+		add_filter( 'submenu_file', array( $this, 'entry_detail_submenu' ), 10, 2 );
 		add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
 		add_action( 'admin_post_tbreg_save_form', array( $this->editor, 'handle_save' ) );
 		add_action( 'admin_post_tbreg_preview_form', array( new FormPreviewPage( $this->forms ), 'handle' ) );
@@ -126,11 +128,33 @@ final class Menu {
 		add_action( 'load-' . $entries_hook, array( $this->entries_page, 'load' ) );
 		$detail_hook     = add_submenu_page( 'toolsbox-registros', __( 'Detalle de inscripción', 'toolsbox-registros' ), __( 'Detalle de inscripción', 'toolsbox-registros' ), 'tbreg_view_entries', 'toolsbox-registros-entry', array( $this->entry_detail, 'render' ) );
 		$this->screens[] = $detail_hook;
-		remove_submenu_page( 'toolsbox-registros', 'toolsbox-registros-entry' );
 		$this->screens[] = add_submenu_page( 'toolsbox-registros', __( 'Ajustes', 'toolsbox-registros' ), __( 'Ajustes', 'toolsbox-registros' ), 'tbreg_manage_forms', 'toolsbox-registros-settings', array( $this, 'render_settings' ) );
 		add_submenu_page( 'toolsbox-registros', __( 'Acerca de / Más herramientas', 'toolsbox-registros' ), __( 'Acerca de / Más herramientas', 'toolsbox-registros' ), 'tbreg_manage_forms', 'https://codwelt.com/toolsbox-herramientas-digitales-gratis/' );
 		$this->screens[] = add_submenu_page( 'toolsbox-registros', __( 'Editar formulario', 'toolsbox-registros' ), __( 'Crear formulario', 'toolsbox-registros' ), 'tbreg_manage_forms', 'toolsbox-registros-edit', array( $this->editor, 'render' ) );
 		$this->screens[] = add_submenu_page( 'toolsbox-registros', __( 'Exportar', 'toolsbox-registros' ), __( 'Exportar', 'toolsbox-registros' ), 'tbreg_export_entries', 'toolsbox-registros-export', array( $this, 'render_export' ) );
+	}
+
+	/**
+	 * Oculta el detalle del menú después de la verificación de acceso.
+	 *
+	 * Quitarlo durante admin_menu deja la página sin padre y WordPress
+	 * rechaza el acceso directo aunque el usuario tenga la capacidad.
+	 *
+	 * @return void
+	 */
+	public function hide_entry_detail(): void {
+		remove_submenu_page( 'toolsbox-registros', 'toolsbox-registros-entry' );
+	}
+
+	/**
+	 * Marca Inscripciones como activa mientras se ve un detalle.
+	 *
+	 * @param string|null $submenu_file Submenú activo.
+	 * @param string      $parent_file Menú padre activo.
+	 * @return string|null
+	 */
+	public function entry_detail_submenu( ?string $submenu_file, string $parent_file ): ?string {
+		return 'toolsbox-registros' === $parent_file && 'toolsbox-registros-entry' === $submenu_file ? 'toolsbox-registros-entries' : $submenu_file;
 	}
 
 	/**

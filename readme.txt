@@ -4,7 +4,7 @@ Tags: forms, registration, events, export, excel
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.7
+Stable tag: 0.3.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,10 @@ Sí. Copia la plantilla de templates/ dentro de toolsbox-registros/ en tu tema. 
 No. La desactivación conserva las tablas y los registros existentes.
 
 == Changelog ==
+
+= 0.3.9 =
+
+* Corregido: el detalle de una inscripción mostraba «Lo siento, no tienes permitido el acceso a esta página» incluso a administradores. La página se oculta del menú después de la verificación de acceso de WordPress y el menú marca Inscripciones mientras se ve un detalle.
 
 = 0.3.7 =
 

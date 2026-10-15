@@ -363,6 +363,40 @@ final class RepositoriesTest extends TestCase {
 		$this->assertSame( 0, $copy->get( 'entries_count' ) );
 	}
 
+	public function test_entry_detail_is_accessible_directly_but_hidden_from_menu(): void {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		$names  = array( 'menu', 'submenu', '_wp_menu_nopriv', '_wp_submenu_nopriv', '_registered_pages', 'admin_page_hooks', '_wp_real_parent_file', 'parent_file', 'pagenow', 'plugin_page', 'typenow' );
+		$backup = array();
+		foreach ( $names as $name ) {
+			$backup[ $name ] = $GLOBALS[ $name ] ?? null;
+		}
+		$get = $_GET;
+		try {
+			foreach ( array( 'menu', 'submenu', '_wp_menu_nopriv', '_wp_submenu_nopriv', '_registered_pages', 'admin_page_hooks', '_wp_real_parent_file' ) as $name ) {
+				$GLOBALS[ $name ] = array();
+			}
+			$GLOBALS['parent_file'] = null;
+			$GLOBALS['typenow']     = '';
+			$GLOBALS['pagenow']     = 'admin.php';
+			$GLOBALS['plugin_page'] = 'toolsbox-registros-entry';
+			$_GET['page']           = 'toolsbox-registros-entry';
+			$menu = new Menu( $this->forms );
+			$menu->menu();
+			// WordPress comprueba el acceso al terminar admin_menu (wp-admin/menu.php).
+			$this->assertSame( 'toolsbox-registros', get_admin_page_parent() );
+			$this->assertTrue( user_can_access_admin_page() );
+			$menu->hide_entry_detail();
+			$this->assertNotContains( 'toolsbox-registros-entry', array_column( $GLOBALS['submenu']['toolsbox-registros'], 2 ) );
+			$this->assertSame( 'toolsbox-registros-entries', $menu->entry_detail_submenu( 'toolsbox-registros-entry', 'toolsbox-registros' ) );
+			$this->assertSame( 'toolsbox-registros-edit', $menu->entry_detail_submenu( 'toolsbox-registros-edit', 'toolsbox-registros' ) );
+		} finally {
+			foreach ( $backup as $name => $value ) {
+				$GLOBALS[ $name ] = $value;
+			}
+			$_GET = $get;
+		}
+	}
+
 	public function test_templates_are_valid_have_unique_keys_and_copy_as_drafts(): void {
 		foreach ( Templates::all() as $name => $template ) {
 			$form = Form::fromArray( array( 'title' => $template['label'], 'fields' => $template['fields'], 'settings' => $template['settings'] ?? array() ) );
