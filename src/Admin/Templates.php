@@ -24,6 +24,7 @@ final class Templates {
 	 */
 	public static function types(): array {
 		return array(
+			'photo'    => __( 'Fotografía (archivo o cámara)', 'toolsbox-registros' ),
 			'text'     => __( 'Texto', 'toolsbox-registros' ),
 			'email'    => __( 'Correo electrónico', 'toolsbox-registros' ),
 			'tel'      => __( 'Teléfono', 'toolsbox-registros' ),
@@ -48,28 +49,28 @@ final class Templates {
 	 * @return array<string,array<string,mixed>>
 	 */
 	public static function all(): array {
-		$name      = array(
+		$name                   = array(
 			'type'     => 'text',
 			'label'    => __( 'Nombre completo', 'toolsbox-registros' ),
 			'role'     => 'name',
 			'required' => true,
 		);
-		$email     = array(
+		$email                  = array(
 			'type'     => 'email',
 			'label'    => __( 'Correo electrónico', 'toolsbox-registros' ),
 			'role'     => 'email',
 			'required' => true,
 		);
-		$phone     = array(
+		$phone                  = array(
 			'type'  => 'tel',
 			'label' => __( 'Teléfono', 'toolsbox-registros' ),
 		);
-		$consent   = array(
+		$consent                = array(
 			'type'     => 'consent',
 			'label'    => __( 'Autorizo el tratamiento de mis datos personales', 'toolsbox-registros' ),
 			'required' => true,
 		);
-		$city      = array(
+		$city                   = array(
 			'type'    => 'select',
 			'label'   => __( 'Ciudad', 'toolsbox-registros' ),
 			'options' => array(
@@ -87,7 +88,7 @@ final class Templates {
 				),
 			),
 		);
-		$templates = array(
+		$templates              = array(
 			'event'   => array(
 				'label'  => __( 'Evento básico', 'toolsbox-registros' ),
 				'fields' => array(
@@ -145,9 +146,23 @@ final class Templates {
 				'settings' => array( 'event' => array( 'modality' => 'virtual' ) ),
 			),
 		);
+		$templates['languages'] = LanguageTemplate::get();
 		foreach ( $templates as &$template ) {
+			$map = array();
+			foreach ( $template['fields'] as $field ) {
+				if ( isset( $field['key'] ) ) {
+					$map[ $field['key'] ] = 'f_' . bin2hex( random_bytes( 8 ) ); }
+			}
 			foreach ( $template['fields'] as &$field ) {
-				$field['key'] = 'f_' . bin2hex( random_bytes( 8 ) );
+				$field['key'] = $map[ $field['key'] ?? '' ] ?? ( 'f_' . bin2hex( random_bytes( 8 ) ) );
+				foreach ( $field['options'] ?? array() as $index => $option ) {
+					if ( ! empty( $option['when'] ) ) {
+						$when = array();
+						foreach ( $option['when'] as $parent => $values ) {
+							$when[ $map[ $parent ] ?? $parent ] = $values; }
+						$field['options'][ $index ]['when'] = $when;
+					}
+				}
 			}
 			unset( $field );
 		}

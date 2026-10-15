@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-15",
+  "phase": "UX-0",
+  "plugin_version": "0.3.1",
+  "source": "Administrador WordPress local, formulario ID 5, Chrome",
+  "TBREG_RUN_INTEGRATION": 1,
+  "php_tests": 145,
+  "php_assertions": 1370,
+  "php_skipped": 0,
+  "dom_tests": 30,
+  "dom_failed": 0,
+  "phpcs_files": 85,
+  "phpcs_errors": 0,
+  "phpcs_warnings": 0,
+  "modified_php_syntax_files": 2,
+  "translator_comment_visible": false,
+  "desktop": {
+    "viewport": 1400,
+    "scroll_width": 1400,
+    "settings_checkbox_dimensions": [16, 16],
+    "notifications_checkbox_dimensions": [16, 16],
+    "label_direction": "row"
+  },
+  "mobile": {
+    "viewport": 375,
+    "scroll_width": 375,
+    "settings_checkbox_dimensions": [25, 25],
+    "notifications_checkbox_dimensions": [25, 25]
+  },
+  "activation_reactivation_wp_debug": true,
+  "existing_table_checksums_and_counts_preserved": true,
+  "form_5_not_saved_or_published": true,
+  "schema_changed": false,
+  "next_phase": "UX-1"
+}

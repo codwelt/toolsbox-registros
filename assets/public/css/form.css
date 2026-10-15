@@ -28,3 +28,5 @@
 	.tbreg-registration { padding: 18px; }
 	.tbreg-registration .tbreg-width-half, .tbreg-registration .tbreg-width-third { grid-column: span 6; }
 }
+
+.tbreg-registration .tbreg-photo-preview,.tbreg-registration .tbreg-camera-video{display:block;max-width:240px;width:100%;height:auto;border-radius:8px;margin-top:12px}.tbreg-registration [hidden]{display:none!important}.tbreg-camera-controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.tbreg-registration .tbreg-pdf-download{display:inline-block;margin-top:12px;text-decoration:underline}

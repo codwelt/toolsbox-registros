@@ -1,0 +1,10 @@
+{
+  "multipart_submission": 201,
+  "pdf_download": 200,
+  "pdf_pages": 2,
+  "other_browser_denied": 403,
+  "invalid_relationship": 422,
+  "no_js_redirect": 303,
+  "admin_photo_visible": true,
+  "csv_rows": 2
+}

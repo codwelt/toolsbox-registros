@@ -109,7 +109,7 @@ final class EntryDetailPage {
 			if ( null !== $form && 'tbreg_validation' === $result->get_error_code() ) {
 				foreach ( $form->fields() as $field ) {
 					$value = $input['tbreg_values'][ $field->key() ] ?? null;
-					if ( ! $field->storesValue() || in_array( $field->get( 'type' ), array( 'hidden', 'consent' ), true ) ) {
+					if ( ! $field->storesValue() || in_array( $field->get( 'type' ), array( 'hidden', 'consent', 'photo' ), true ) ) {
 						continue;
 					}
 					if ( is_scalar( $value ) ) {
@@ -197,6 +197,25 @@ final class EntryDetailPage {
 			);
 			?>
 			"><?php esc_html_e( 'Editar datos y estado', 'toolsbox-registros' ); ?></a></p><?php endif; ?>
+		<?php
+		if ( $form->settings()['pdf_enabled'] ) :
+			?>
+			<p><a class="button" href="
+			<?php
+			echo esc_url(
+				wp_nonce_url(
+					add_query_arg(
+						array(
+							'action'   => 'tbreg_receipt',
+							'entry_id' => $id,
+						),
+						admin_url( 'admin-post.php' )
+					),
+					'tbreg_receipt_' . $id
+				)
+			);
+			?>
+			"><?php esc_html_e( 'Descargar PDF de inscripción', 'toolsbox-registros' ); ?></a></p><?php endif; ?>
 		<?php if ( $editing ) : ?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="tbreg-entry-editor tbreg-registration" novalidate>
 		<input type="hidden" name="action" value="tbreg_save_entry"><input type="hidden" name="tbreg_id" value="<?php echo esc_attr( (string) $id ); ?>"><input type="hidden" name="tbreg_revision" value="<?php echo esc_attr( EntryRepository::revision( $entry, $values ) ); ?>"><input type="hidden" name="tbreg_form_revision" value="<?php echo esc_attr( $form->revision() ); ?>">
@@ -206,7 +225,7 @@ final class EntryDetailPage {
 			foreach ( FormsListTable::entry_statuses() as $key => $label ) :
 				?>
 			<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $entry['status'], $key ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select>
-		<p><?php esc_html_e( 'Los campos eliminados, el consentimiento y los valores ocultos se conservan sin editar. Los datos históricos que no cambies se mantienen.', 'toolsbox-registros' ); ?></p>
+		<p><?php esc_html_e( 'Los campos eliminados, las fotografías, el consentimiento y los valores ocultos se conservan sin editar. Los datos históricos que no cambies se mantienen.', 'toolsbox-registros' ); ?></p>
 		<?php endif; ?>
 		<div class="tbreg-entry-values<?php echo $editing ? ' tbreg-fields' : ''; ?>">
 		<?php
@@ -216,7 +235,11 @@ final class EntryDetailPage {
 				continue;
 			}
 			$value = $values[ $field->key() ] ?? '';
-			if ( $editing && $field->storesValue() && ! in_array( $field->get( 'type' ), array( 'hidden', 'consent' ), true ) ) {
+			if ( 'photo' === $field->get( 'type' ) && '' !== \Codwelt\ToolsBoxRegistros\Services\Photo::jpeg( (string) $value ) ) {
+				echo '<p><strong>' . esc_html( $field->get( 'label' ) ) . '</strong><br><img class="tbreg-photo-preview" src="' . esc_attr( $value ) . '" alt="' . esc_attr( $field->get( 'label' ) ) . '"></p>';
+				continue;
+			}
+			if ( $editing && $field->storesValue() && ! in_array( $field->get( 'type' ), array( 'hidden', 'consent', 'photo' ), true ) ) {
 				$value            = $feedback['values'][ $field->key() ] ?? $value;
 				$error            = $feedback['errors'][ $field->key() ] ?? '';
 				$data             = $field->toArray();

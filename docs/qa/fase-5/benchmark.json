@@ -1,0 +1,20 @@
+[
+    {
+        "format": "xlsx",
+        "entries": 10000,
+        "seconds": 2.8890631198883057,
+        "queries": 1821,
+        "peak_bytes": 42467328,
+        "memory_limit": "64M",
+        "file_bytes": 315652
+    },
+    {
+        "format": "csv",
+        "entries": 10000,
+        "seconds": 2.340848207473755,
+        "queries": 1821,
+        "peak_bytes": 42467328,
+        "memory_limit": "64M",
+        "file_bytes": 1303613
+    }
+]

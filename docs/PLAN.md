@@ -22,12 +22,85 @@ Plugin que permite crear **formularios dinámicos de inscripción** desde el pan
 4. Guardar las inscripciones y consultarlas desde el admin.
 5. **Descargar en Excel (.xlsx)** el listado de inscritos **por formulario** (con CSV como alternativa).
 
-### Fuera de alcance (v1)
-Pagos, lógica condicional entre campos, subida de archivos, check-in con QR, integración con CRM/Mailchimp. Quedan como backlog (sección 9).
+### Fuera de alcance original (v1)
+Pagos, lógica condicional entre campos, subida de archivos, check-in con QR, integración con CRM/Mailchimp se dejaron inicialmente como backlog. La solicitud de idiomas amplía ese alcance con opciones dependientes, fotografías y PDF. La visibilidad condicional de campos completos y los adjuntos generales siguen pendientes.
+
+### Solicitud de inscripción de idiomas — revisión del 2026-10-14
+El usuario necesita reproducir el flujo de [inscripción del Centro Asiático de Idiomas](https://centroasiaticodeidiomas.com/programa_educativo/inscripcion/), con catálogos editables de cursos, niveles, subniveles, modalidad, días/horas y fotografía. La ampliación se implementó con registro en WordPress y PDF para el cliente. No implica iniciar la Fase 6 ni dar por cerrada la QA pendiente de Fase 5.
+
+Comprobación de la referencia:
+- El formulario real está en un iframe: `https://centroasiaticodeidiomas.com/formulario/form.html`. Tiene idioma, nivel, módulo, grupo de días, franja horaria, nombre, fecha de nacimiento, edad, documento, empresa/colegio/universidad, teléfono de casa, acudiente, teléfono de oficina, celular, correo, modalidad y fotografía. Su botón genera PDF; la página indica que son dos páginas para firmar. No se envió información ni se generó una inscripción en ese sitio; el contenido de la segunda página no se ha verificado.
+- La pantalla actual de la referencia ofrece Básico y Programas Especiales; Intermedio y Avanzado están comentados en el HTML, aunque existen en sus catálogos JSON. La nueva necesidad del usuario incluye los tres niveles y debe permitir configurarlos.
+- Los módulos se obtienen de `{japones,mandarin,coreano}_modulos.json`; los horarios, de `{idioma}_horarios.json`. Turistas aparece como programa especial, no como subnivel básico. Se puede configurar de otra forma en la nueva solución si el usuario lo necesita.
+- Los JSON contienen posibles errores (por ejemplo, «9:00 A.M. A 11:00 P.M.» y «Avanzado 4 Avanzado 5» unido). Además, la página pide consultar los horarios publicados y confirmar cupos. Estos catálogos son referencia estructural y no se consideran disponibilidad vigente ni horarios definitivos para publicar.
+
+| Necesidad | Capacidad actual | Trabajo requerido |
+|---|---|---|
+| Cursos Japonés, Mandarín y Coreano | `select` o `radio`, opciones editables | Configurar el catálogo |
+| Básico, Intermedio, Avanzado y programas especiales | Listas independientes | Configurar niveles por curso si corresponde |
+| Subnivel/módulo según curso y nivel | No admite dependencias | Editor de relaciones, filtrado en la web y validación cruzada en el servidor |
+| Modalidad presencial/virtual elegida por el inscrito | `select` o `radio` | Usar un campo de respuesta; `settings.event.modality` fija la modalidad del evento y no sustituye esta elección |
+| Días y horas disponibles según programa/modalidad | Solo listas independientes | Configurar ofertas válidas y filtrar/revalidar combinaciones; distinguir un horario ofertado de una hora libre escrita por el usuario |
+| Datos personales y acudiente | Tipos existentes | Plantilla con los campos de la referencia; documento y teléfonos como texto, no números |
+| Foto desde archivo o cámara | No hay tipo de imagen ni transporte de archivos | Campo de foto, carga multipart, captura moderna con consentimiento del navegador, vista previa y validación real de imagen |
+| Generar PDF de dos páginas | No implementado | Definir si se requiere además del registro en WordPress; confirmar contenido y firma de la segunda página |
+| Gestión y Excel/CSV | Implementados | Mantener textos visibles, histórico y columnas independientes de curso/nivel/módulo/modalidad/días/horas |
+
+Flujo requerido: **Curso → Nivel → Subnivel/módulo → Modalidad → Días → Franja horaria**, con horarios configurables por el administrador. Cambiar una selección debe borrar las posteriores que dejen de ser válidas. No se aceptará una combinación alterada mediante POST/REST aunque los valores pertenezcan por separado a los catálogos. Los cupos actuales son por formulario; un cupo independiente por grupo/horario sería otro requisito y no debe darse por disponible.
+
+Condiciones para implementar esta ampliación:
+1. Plantilla «Inscripción de idiomas» con los datos de la referencia, incluyendo consentimiento y foto; identificadores de campos inmutables y catálogos editables sin modificar código.
+2. Relaciones de opciones verificadas al guardar el esquema y al inscribir; cambios del esquema durante el envío se revalidan dentro de la transacción existente. Limpiar valores dependientes al cambiar idioma, nivel o modalidad.
+3. Foto validada por contenido, formato, tamaño y dimensiones; rechazar SVG, ejecutables y archivos disfrazados. Acceso administrativo protegido, sin publicar fotos personales como URLs abiertas. No conservar fotos en transients de errores ni incluir datos de imagen en las celdas de Excel. Definir almacenamiento, eliminación y exportación de datos antes de habilitarlo.
+4. Cámara solicitada solo al pulsar «Tomar foto», con cancelación y cierre de la cámara; archivo como alternativa ante permisos rechazados o dispositivos incompatibles. Verificar HTTPS y compatibilidad real en escritorio/móvil; no pedir permiso de cámara durante pruebas automatizadas sobre la cámara personal del usuario.
+5. QA: al menos una inscripción completa por idioma; subniveles y horarios inválidos rechazados en servidor; cambio de padres limpia hijos; carga y captura de imagen con datos ficticios; detalle/exportación conservan selecciones legibles. Ejecutar siempre `TBREG_RUN_INTEGRATION=1`.
+
+Decisiones confirmadas por el usuario: guardar la inscripción en WordPress, consultarla y descargar Excel desde el administrador, y ofrecer PDF al cliente. Se autoriza un catálogo de ejemplo editable. Esta ampliación se trabaja como una fase específica de idiomas, sin iniciar notificaciones ni cerrar artificialmente la QA pendiente de Excel.
+
+Decisiones de implementación de la ampliación (antes de modificar runtime):
+- Dependencias genéricas por opción: `when` relaciona claves de campos de selección con listas de valores permitidos (AND entre campos, OR entre valores). El editor configura estas reglas sin código. Se validan referencias y ciclos; el servidor vuelve a comprobar la combinación dentro de la transacción.
+- Fotos JPEG/PNG/WebP de hasta 5 MiB, con límites de dimensiones/píxeles; se decodifican y recomprimen a JPEG reducido, eliminando metadatos. Se guardan como datos de imagen en la tabla de valores existente: no hay archivos públicos ni migración de tablas. El detalle administrativo muestra la foto, el borrado elimina su valor y Excel solo incluye «Foto adjunta». Los lotes de exportación se reducen cuando hay fotos.
+- PDF nativo en PHP, con fuente DejaVu Sans redistribuible y su licencia; la habilidad PDF se usa para renderizar e inspeccionar QA. No se añade una librería de runtime. La fuente es un recurso estático, no una dependencia Composer.
+- El PDF se habilita por formulario. La plantilla de idiomas lo activa y ofrece una segunda página con texto editable y espacios de firma, sin inventar las condiciones legales no verificadas de la referencia. Si hay más datos que los que caben en dos páginas, se agregan páginas para conservarlos completos.
+- Acceso del cliente al PDF mediante token aleatorio y cookie HttpOnly del navegador durante 24 horas; el token no autoriza otro navegador. Acceso del administrador mediante capacidad y nonce. No se incluyen fotos en transients de errores; los permisos de cámara se solicitan únicamente al usar el botón correspondiente.
+
+Diagnóstico previo a la ampliación: las listas independientes admitían Básico + Intermedio 1 y no había tipo `photo`. [Resultado inicial](qa/idiomas/revision.json). La tabla anterior describe esa situación previa y el trabajo que se necesitaba.
+
+Resultado y verificación de la ampliación:
+- **Borrador creado en el WordPress local:** «Inscripción de idiomas», ID **5**, 18 campos y PDF habilitado. Shortcode `[toolsbox_registro id="5"]`. El plugin está activo; el borrador no se publica hasta que el administrador revise catálogos, horarios, texto de autorización y texto del PDF. La plantilla «Inscripción de idiomas (ejemplo editable)» permite crear más formularios con claves nuevas y relaciones conservadas.
+- **`TBREG_RUN_INTEGRATION=1`: 139 pruebas PHP / 1.319 aserciones**, sin omisiones. **27 pruebas DOM**, incluidas dependencias, regeneración de claves, edición de reglas, captura simulada, permiso rechazado y enlace al PDF. WPCS/PHPCompatibility: **83 archivos** sin errores. Sintaxis: **93 PHP, 3 JS y 5 CJS**.
+- Se guardó una inscripción por cada idioma, con foto sintética, consultable desde el admin y exportable a XLSX/CSV. Básico + Intermedio 1 y horarios de otro curso/modalidad se rechazan sin escrituras parciales; se revalida el esquema dentro de la transacción. La edición administrativa revalida hijos al cambiar padres y conserva fotos de solo lectura.
+- HTTP real sobre tablas aisladas: foto multipart + inscripción → 201; PDF → 200, MIME `application/pdf`, longitud correcta y caché deshabilitada; otro navegador sin cookie → 403; relación inválida → 422; POST sin JS → 303 con enlace PDF en el resultado. Foto visible en el detalle; CSV conserva selecciones y muestra «Foto adjunta», sin base64. [Informe](qa/idiomas/http.json).
+- PDF de la plantilla: **dos páginas carta**, fuente incluida, texto Unicode seleccionable, ceros iniciales, foto y espacios de firma. Poppler renderizó ambas páginas y se revisaron visualmente; pypdf confirmó datos, textos de opciones y firmas. Un valor largo se paginó en cuatro páginas y conservó `FINAL_UNICO`, sin recortar el contenido. [PDF ficticio](qa/idiomas/inscripcion.pdf), [página 1](qa/idiomas/pdf-1.png), [página 2](qa/idiomas/pdf-2.png).
+- Chrome: inscripción completa con enlace de PDF, catálogos filtrados y [pantalla a 375 px](qa/idiomas/formulario-375.jpg) sin desbordes. [Escritorio](qa/idiomas/formulario-escritorio.jpg) y [resultado](qa/idiomas/inscripcion-pdf-listo.jpg). La carga local mediante la extensión quedó bloqueada por su permiso «Allow access to file URLs»; no se cambió ese permiso. La carga real se comprobó por HTTP. La cámara se comprobó con dispositivos simulados en DOM, sin usar la cámara personal del usuario; la prueba física en móviles/escritorio queda en la matriz de Fase 8.
+- La cámara usa `getUserMedia`, requiere HTTPS (localhost es válido), nunca solicita audio y cierra pistas al capturar, cancelar, cambiar de archivo, ocultar la página o terminar la inscripción. Si la cámara falla, permanece disponible el archivo. [Referencia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia).
+- Se requiere GD para recomprimir fotos. El límite visible respeta el menor valor entre 5 MiB y los límites PHP del servidor; la imagen se reduce a 800 px, se elimina metadata y se controla la memoria antes de decodificar. Tras un error con POST sin JS, se pide adjuntar otra vez la foto; no se guarda en transients de errores. Los PDF no se generan con librerías externas; [DejaVu](https://github.com/dejavu-fonts/dejavu-fonts) y su licencia están en `assets/fonts/`.
+- Los enlaces del cliente caducan a las 24 horas y están ligados a cookie HttpOnly. Los transients contienen autorización y esquema, sin respuestas ni fotografías; se eliminan con el mantenimiento existente. La eliminación de la inscripción revoca su PDF y elimina la foto. El PDF habilitado mantiene el resultado con su enlace antes de cualquier redirección configurada.
+- Exportación de regresión: 10.000 registros en un proceso limitado a 64 MiB conservó el pico de **40,5 MiB**. Se actualiza la versión de desarrollo a **0.2.0** para invalidar la caché de los assets anteriores. No hay cambios en tablas, instalador, `wp-config.php` ni dependencias Composer; la nota de autoload de Fase 1 continúa pendiente.
 
 ---
 
 ## 2. Decisiones de arquitectura
+
+### Ampliación Elementor — solicitud del 2026-10-14
+El usuario solicita un widget por instancia para seleccionar cualquier formulario y diseñar sus campos desde Elementor. Esta ampliación autorizada no inicia la Fase 6 ni modifica el esquema de datos.
+
+Decisiones antes de implementar:
+- Integración opcional con Elementor gratuito mediante `elementor/widgets/register`; no cargar la clase que extiende `Widget_Base` cuando Elementor no esté disponible.
+- Widget `tbreg_form` con selector de formulario, vista previa autorizada de borradores y controles nativos de contenido/estilo. Los visitantes siguen viendo solo formularios públicos y las reglas existentes de disponibilidad.
+- Estilos limitados a `{{WRAPPER}}`: contenedor, títulos, etiquetas, controles, opciones, ayuda, errores, botón, foto y resultado/PDF. Ajustes responsive y ajustes individuales mediante repetidor que relaciona las claves inmutables de los campos con clases de presentación, sin alterar el esquema guardado.
+- Utilizar el renderer y el envío existentes, sin duplicar validación, cupos, fotografías, inscripciones ni PDF. Desactivar la caché de HTML del widget para respetar reglas y resultados privados.
+- Declarar assets como dependencias de Elementor y permitir inicialización idempotente cuando Elementor inserte/reemplace el widget. La vista previa del editor no enviará inscripciones ni abrirá la cámara.
+- Verificar con Elementor real instalado y con Elementor ausente, probar estilos independientes y responsive, regeneración de la vista previa, campos dependientes y envío. Ejecutar todas las pruebas PHP con `TBREG_RUN_INTEGRATION=1`.
+
+Resultado:
+- Integración implementada en **0.3.0**, sin migraciones ni dependencias de runtime. Widget disponible con Elementor gratuito; el arranque sin Elementor no carga `Widget_Base` ni la clase del widget.
+- Selector de formularios y estilos generales e individuales nativos, incluidas tipografías y anchos responsive. El mismo formulario admite diseños distintos por instancia. No se modificó el borrador de idiomas ID 5 ni sus inscripciones.
+- Borradores visibles solo para administradores de formularios; editores de páginas pueden diseñar formularios públicos. Vista previa sin envío, cámara ni renovación de token. Formulario público conserva renderer, validación, cupos, opciones dependientes, fotos, PDF y exportación existentes.
+- **`TBREG_RUN_INTEGRATION=1`: 145 pruebas PHP / 1.370 aserciones**, sin omisiones; **30 pruebas DOM**, todas correctas. WPCS/PHPCompatibility: **85 archivos** sin errores ni avisos. Sintaxis: **97 PHP y 9 JS/CJS**.
+- Activación, desactivación y reactivación verificadas con `WP_DEBUG=1`, sin avisos del plugin y conservando los registros existentes.
+- Elementor **4.2.4** real generó CSS con selectores por instancia, repetidores y media queries; se verificaron tipografías, colores, bordes, anchos, ocultar título y estilos independientes. Los tests crean tablas aleatorias y una página temporal de QA, y las eliminan al terminar.
+- Chrome revisó el HTML del widget y ese CSS generado: dos formularios independientes, opciones dependientes y presentación a **375 px** sin desbordes. El campo configurado cambió de `span 3` a `span 6` y el relleno a 12 px. [Escritorio](qa/elementor/widgets-escritorio.png), [móvil](qa/elementor/widgets-375.png), [informe](qa/elementor/verificacion.json) y [guía de uso](ELEMENTOR.md). La cámara física y QA Excel de Fase 5 conservan su estado anterior.
 
 | Tema | Decisión | Motivo |
 |---|---|---|
@@ -99,7 +172,10 @@ toolsbox-registros/
 │   │   ├── FormsListTable.php      # WP_List_Table
 │   │   ├── FormEditorPage.php      # Pantalla del constructor
 │   │   ├── EntriesListTable.php
+│   │   ├── EntriesFilters.php     # Días locales → límites UTC
+│   │   ├── EntriesPage.php
 │   │   ├── EntryDetailPage.php
+│   │   ├── ExportPage.php
 │   │   ├── SettingsPage.php
 │   │   └── Notices.php
 │   ├── Frontend/
@@ -119,6 +195,7 @@ toolsbox-registros/
 │       ├── ExporterInterface.php
 │       ├── XlsxWriter.php
 │       ├── CsvWriter.php
+│       ├── SpreadsheetText.php
 │       └── EntriesExporter.php
 └── tests/
     ├── bootstrap.php
@@ -223,8 +300,8 @@ Menú principal **"ToolsBox Registros"** (icono `dashicons-clipboard`):
 - **Ajustes**: remitente de correos, captcha (claves), retención de datos, "borrar datos al desinstalar".
 - Enlace "Acerca de / Más herramientas" → https://codwelt.com/toolsbox-herramientas-digitales-gratis/
 
-### 5.2 Catálogo de tipos de campo (v1)
-`text`, `email`, `tel`, `number`, `textarea`, `select`, `radio`, `checkbox` (uno o varios), `date`, `time`, `url`, `document` (texto con validación alfanumérica para cédula/NIT/pasaporte), `consent` (checkbox obligatorio con texto legal), `heading` (título/separador, no guarda datos), `hidden` (valor fijo o desde parámetro GET, útil para UTM).
+### 5.2 Catálogo de tipos de campo
+`text`, `email`, `tel`, `number`, `textarea`, `select`, `radio`, `checkbox` (uno o varios), `date`, `time`, `url`, `document` (texto con validación alfanumérica para cédula/NIT/pasaporte), `consent` (checkbox obligatorio con texto legal), `heading` (título/separador, no guarda datos), `hidden` (valor fijo o desde parámetro GET, útil para UTM). La ampliación Idiomas añade `photo` para fotografías privadas, con normalización de imagen antes de guardar.
 
 Cada tipo implementa `FieldTypeInterface`:
 ```php
@@ -489,6 +566,12 @@ Verificación del 2026-10-13:
 ### Fase 5 — Exportación a Excel
 **Objetivo:** descarga del registro de inscritos por formulario.
 
+Decisiones de implementación de Fase 5:
+- La fecha de inscripción de XLSX se guarda como fecha numérica de Excel, con formato `dd/mm/yyyy hh:mm:ss` y hora local del sitio; CSV usa `Y-m-d H:i:s`. Los documentos, teléfonos y demás identificadores son texto. Números con más de 15 cifras significativas se conservan como texto para evitar redondeos.
+- La iteración mantiene un límite superior de IDs al comenzar y usa el esquema inicial de columnas. Los bloques son de hasta 500 registros y se reducen para esquemas con textos largos, limitando la memoria del lote.
+- XLSX genera todas las partes localmente sin librerías externas. La habilidad de hojas de cálculo se aplica para inspeccionar y renderizar los archivos de QA; el escritor PHP nativo tiene prioridad según este plan.
+
+
 Tareas:
 1. `XlsxWriter` (sin dependencias):
    - Genera `[Content_Types].xml`, `_rels/.rels`, `docProps/core.xml`, `xl/workbook.xml`, `xl/_rels/workbook.xml.rels`, `xl/styles.xml` (encabezado en negrita con fondo y formato de fecha) y `xl/worksheets/sheet1.xml`.
@@ -503,10 +586,21 @@ Tareas:
 
 Criterios de aceptación:
 - [ ] El `.xlsx` abre sin advertencias de reparación en Excel (Windows/Mac), LibreOffice y Google Sheets.
-- [ ] Las tildes, la ñ y los emojis se ven correctamente en XLSX y CSV.
-- [ ] Exportar 10.000 inscripciones no supera los 64 MB de memoria.
-- [ ] Un valor `=HYPERLINK(...)` se exporta como texto, no como fórmula.
-- [ ] Las columnas de campos archivados aparecen con el sufijo "(eliminado)".
+- [x] Las tildes, la ñ y los emojis se ven correctamente en XLSX y CSV.
+- [x] Exportar 10.000 inscripciones no supera los 64 MB de memoria.
+- [x] Un valor `=HYPERLINK(...)` se exporta como texto, no como fórmula.
+- [x] Las columnas de campos archivados aparecen con el sufijo "(eliminado)".
+
+Verificación del 2026-10-13:
+- `TBREG_RUN_INTEGRATION=1`: **130 pruebas PHP / 1.181 aserciones**, sin omisiones. Incluye paquetes XML, tipos, precisión numérica, UTF-16 sin cortar emojis, BOM/separadores, fórmulas como texto, histórico, filtros, hooks, capacidades/nonces y selección privada caducada, eliminada o de otro formulario/usuario. Tablas de prefijo aleatorio, eliminadas al terminar.
+- **21 pruebas DOM** con integración activa: 10 constructor, 8 frontend, 2 inscripciones y 1 exportación. WPCS/PHPCompatibility sin errores en **75 archivos**; sintaxis válida en **84 PHP, 3 JS y 4 CJS**. Activación/desactivación/reactivación reales con `WP_DEBUG=1`: sin avisos del plugin y datos existentes conservados.
+- Proceso independiente con `memory_limit=64M`, WordPress local y **10.000 inscripciones** de seis campos: pico **42.467.328 bytes (40,5 MiB)** para ambos formatos, XLSX **2,889 s** y CSV **2,341 s**. [Medición](qa/fase-5/benchmark.json). Los bloques se adaptan al tamaño máximo del esquema; la medición incluye WordPress, aislado de otros plugins/tema.
+- HTTP y Chrome: archivos íntegros con MIME, nombre, longitud, `nosniff` y caché deshabilitada; se descartan buffers con HTML retenido. Nonce/permisos inválidos → 403, GET → 405, selección caducada → 303 y pantalla bloqueada; selección válida devuelve únicamente sus IDs. [Informe](qa/fase-5/http.json), [escritorio](qa/fase-5/exportacion-escritorio.jpg) y [375 px sin desborde](qa/fase-5/exportacion-375.jpg). Temporales aleatorios con permisos `0600`, limpieza al enviar, abortar y finalizar la petición.
+- LibreOffice abrió el XLSX nativo y lo convirtió a ODS: lectura de fechas, tildes/emojis, documentos con ceros iniciales, opciones visibles y ausencia de fórmulas verificada. El importador de la habilidad de hojas de cálculo confirmó los valores y ausencia de fórmulas. Su vista previa muestra incorrectamente los documentos numéricos de texto en notación científica; los valores leídos, el XML y las aplicaciones nativas conservan el texto completo.
+- Google Sheets importó el archivo PHP como hoja nativa, sin reescribir el XLSX. API y [vista nativa](qa/fase-5/google-sheets.jpg) confirman fecha local, `stringValue` para documentos y `=HYPERLINK(...)`, Unicode, estilos, filtro y cabecera congelada. Solo datos ficticios. [Hoja de QA](https://docs.google.com/spreadsheets/d/1pO_arUqsp1wJYY58jdtrsKaw6uPKTWzyKcHTSBKqeJM/edit?usp=drivesdk).
+- XLSX deshabilitado se prueba mediante filtro: CSV disponible, opción Excel oculta y aviso en Ajustes. `tbreg_export_columns` recibe un mapa ordenado `clave => ['label' => texto, 'type' => 'text'|'number'|'date']`; `tbreg_export_row` recibe el mapa de valores, la inscripción y el formulario. Las extensiones pueden reordenar/agregar columnas; sus textos también se protegen.
+- **QA pendiente para cerrar la fase:** apertura sin reparación en Excel Windows y Mac. No hay entorno Windows disponible; Excel Mac se inició en modo lectura, pero su selector mantiene «Open» deshabilitado y no abrió el archivo seleccionado. No se afirma verificación en Excel. Se conservan [XLSX](qa/fase-5/inscritos.xlsx) y [CSV](qa/fase-5/inscritos.csv) ficticios para esa comprobación. Según `AGENTS.md`, no se inicia Fase 6 hasta cerrar este criterio.
+- Sin dependencias de runtime ni cambios en `wp-config.php`, el instalador o el esquema. La nota de autoload de Fase 1 permanece pendiente; las fechas del admin se convierten a UTC con `EntriesFilters`.
 
 ### Fase 6 — Notificaciones
 **Objetivo:** correos al administrador y al inscrito.
@@ -569,7 +663,10 @@ Criterios de aceptación:
 | 2 Constructor | ✅ Completada | Ajustes de la revisión visual resueltos; controles por tipo, predeterminados de listas y diseño responsive verificados en Chrome a 1300/375 px. 10 pruebas DOM del constructor; capturas en `docs/qa/fase-3/`. |
 | 3 Frontend/envío | ✅ Completada | Shortcode/bloque, 15 tipos, POST/REST, validación, cupos, fechas, duplicados y antispam. 103 PHP / 788 aserciones con integración activa + 18 DOM; HTTP real, teclado/foco y responsive en Chrome; activación/reactivación sin avisos. Captcha real pendiente de QA; requiere InnoDB. |
 | 4 Inscripciones | ✅ Completada | Filtros locales→UTC, columnas y opciones de pantalla, detalle/edición con historial y revisiones, acciones masivas y cupos. 117 PHP / 925 aserciones con integración activa + 20 DOM; 1.000 inscritos en 0.003165 s con 6 consultas; HTTP, Chrome y reactivación verificados. Selección de exportación lista; descarga en Fase 5. |
-| 5 Exportación | ⬜ Pendiente | |
+| 5 Exportación | ✅ Completada | XLSX nativo/CSV, filtros locales→UTC, histórico, selección y descargas protegidas. 130 PHP / 1.181 aserciones + 21 DOM; 10.000 inscritos con pico 40,5 MiB. LibreOffice y Google Sheets verificados. **Excel para Mac (2026-10-15):** abre sin aviso de reparación, con alertas activas; tildes, ñ, emojis y CJK correctos; fecha como fecha real; `=HYPERLINK(...)` queda como texto; celda larga truncada a 32.767; nombre de hoja saneado. Excel para Windows: confirmar en la matriz de la Fase 8. |
+| Ampliación Idiomas | ✅ Implementada | Catálogo de ejemplo, opciones dependientes con validación cruzada, foto privada y PDF para cliente/admin. Borrador ID 5. 139 PHP / 1.319 aserciones con integración activa + 27 DOM; HTTP real, Chrome, móvil 375 px y PDF renderizado. Cámara física pendiente de matriz de dispositivos en Fase 8. |
+| Ampliación Elementor | ✅ Implementada | Widget opcional para Elementor gratuito; estilos por instancia y campo, responsive, vista previa sin envío y montaje idempotente. 145 PHP / 1.370 aserciones con integración activa + 30 DOM; Elementor 4.2.4 y Chrome a 375 px. Guía en `docs/ELEMENTOR.md`. |
+| Rediseño del editor (UX-0 a UX-6) | 🟡 UX-0 completada | **0.3.1 (2026-10-15):** eliminada la impresión del comentario de traductores y corregidas casillas/etiquetas en fila conservando dimensiones nativas de WordPress (16 px escritorio / 25 px móvil). Chrome real, formulario ID 5, a 1400/375 px sin desbordes; [capturas](qa/editor-ux/despues/ux-0/). 145 PHP / 1.370 aserciones con `TBREG_RUN_INTEGRATION=1`, 30 DOM y WPCS correctos. Activación/reactivación con `WP_DEBUG=1` sin avisos del plugin ni cambios de datos. Siguiente: UX-1, según [`PLAN-EDITOR-UX.md`](PLAN-EDITOR-UX.md). |
 | 6 Notificaciones | ⬜ Pendiente | |
 | 7 Privacidad/hardening | ⬜ Pendiente | |
 | 8 QA/release | ⬜ Pendiente | |
@@ -579,8 +676,8 @@ Criterios de aceptación:
 - `tbreg_db_version` se guarda con `autoload = false`, pero `Migrations::maybe_upgrade()` la lee en cada petición, lo que suma una consulta extra por página. Cambiarla a autoload `true` cuando se toque el instalador.
 
 ## 9. Backlog (post v1)
-- Lógica condicional (mostrar campo X si Y = Z).
-- Campo de subida de archivos.
+- Lógica condicional para campos completos (las opciones dependientes ya están en la ampliación Idiomas).
+- Adjuntos generales (las fotografías JPEG/PNG/WebP ya están disponibles).
 - Check-in con código QR enviado en el correo de confirmación + escáner en el admin.
 - Exportar a Google Sheets / webhook genérico.
 - Integración con pagos (WooCommerce / Wompi / Mercado Pago).

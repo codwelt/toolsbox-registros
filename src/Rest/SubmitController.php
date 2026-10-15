@@ -80,7 +80,7 @@ final class SubmitController {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function submit( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$result = $this->handler->submit( (int) $request->get_url_params()['id'], $request->get_params(), SubmissionHandler::transport() );
+		$result = $this->handler->submit( (int) $request->get_url_params()['id'], $request->get_params(), SubmissionHandler::transport(), $request->get_file_params() );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}

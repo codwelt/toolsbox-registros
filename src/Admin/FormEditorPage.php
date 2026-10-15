@@ -67,6 +67,7 @@ final class FormEditorPage {
 			if ( ! str_starts_with( ltrim( $json ), '[' ) || ! is_array( $fields ) || array_values( $fields ) !== $fields ) {
 				return new \WP_Error( 'tbreg_invalid_data', __( 'Los campos deben ser una lista ordenada.', 'toolsbox-registros' ) );
 			}
+			$condition_remaps = array();
 			// Solo las opciones recién creadas y no editadas generan su valor desde la etiqueta.
 			foreach ( $fields as &$field ) {
 				if ( ! is_array( $field ) ) {
@@ -83,6 +84,8 @@ final class FormEditorPage {
 					}
 					unset( $option );
 				}
+				if ( ! empty( $remap ) && isset( $field['key'] ) && is_string( $field['key'] ) ) {
+					$condition_remaps[ $field['key'] ] = $remap; }
 				$default = $field['default'] ?? '';
 				if ( is_scalar( $default ) && isset( $remap[ (string) $default ] ) ) {
 					$field['default'] = $remap[ (string) $default ];
@@ -91,6 +94,15 @@ final class FormEditorPage {
 				}
 				if ( 'consent' === ( $field['type'] ?? '' ) ) {
 					$field['required'] = true;
+				}
+			}
+			unset( $field );
+			foreach ( $fields as &$field ) {
+				foreach ( $field['options'] ?? array() as $index => $option ) {
+					foreach ( $option['when'] ?? array() as $parent => $allowed ) {
+						if ( isset( $condition_remaps[ $parent ] ) && is_array( $allowed ) ) {
+							$field['options'][ $index ]['when'][ $parent ] = array_map( static fn ( mixed $value ): mixed => is_string( $value ) ? ( $condition_remaps[ $parent ][ $value ] ?? $value ) : $value, $allowed ); }
+					}
 				}
 			}
 			unset( $field );
@@ -131,7 +143,7 @@ final class FormEditorPage {
 				throw new \InvalidArgumentException( esc_html__( 'La configuración del evento o las notificaciones no es válida.', 'toolsbox-registros' ) );
 			}
 		}
-		foreach ( array( 'waitlist', 'require_login' ) as $name ) {
+		foreach ( array( 'waitlist', 'require_login', 'pdf_enabled' ) as $name ) {
 			$value = $raw[ $name ] ?? '0';
 			if ( ! in_array( $value, array( '0', '1', false, true ), true ) ) {
 				throw new \InvalidArgumentException( esc_html__( 'Una opción de configuración no es válida.', 'toolsbox-registros' ) );
@@ -343,6 +355,8 @@ final class FormEditorPage {
 					$this->control( 'tbreg_settings[success_message]', __( 'Mensaje de éxito', 'toolsbox-registros' ), $settings['success_message'], 'textarea' );
 					$this->control( 'tbreg_settings[redirect_url]', __( 'Redirección después de inscribirse', 'toolsbox-registros' ), $settings['redirect_url'], 'url' );
 					$this->control( 'tbreg_settings[consent_text]', __( 'Texto de autorización de tratamiento de datos', 'toolsbox-registros' ), $settings['consent_text'], 'textarea' );
+					$this->checkbox_control( 'tbreg_settings[pdf_enabled]', __( 'Ofrecer PDF al cliente al completar la inscripción', 'toolsbox-registros' ), $settings['pdf_enabled'] );
+					$this->control( 'tbreg_settings[receipt_text]', __( 'Texto de la segunda página del PDF', 'toolsbox-registros' ), $settings['receipt_text'], 'textarea' );
 					$this->checkbox_control( 'tbreg_settings[waitlist]', __( 'Permitir lista de espera cuando se complete el cupo', 'toolsbox-registros' ), $settings['waitlist'] );
 					$this->checkbox_control( 'tbreg_settings[require_login]', __( 'Requerir inicio de sesión para inscribirse', 'toolsbox-registros' ), $settings['require_login'] );
 					?>
@@ -358,7 +372,6 @@ final class FormEditorPage {
 						)
 					);
 					?>
-					/* translators: Marcadores numéricos: cantidades o identificadores; %s: zona horaria del sitio. */
 					<p class="description tbreg-full"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Las fechas de este formulario se configuran en la zona horaria del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?></p>
 				</section>
 				<section id="tbreg-panel-notifications" role="tabpanel" aria-labelledby="tbreg-tab-notifications" class="tbreg-panel tbreg-settings-grid" hidden>

@@ -133,12 +133,12 @@ final class RepositoriesTest extends TestCase {
 		$this->assertInstanceOf( Form::class, $saved );
 		$loaded = $this->forms->find( $saved->id() );
 		$this->assertSame( array_reverse( Field::TYPES ), array_map( static fn ( Field $field ): string => $field->get( 'type' ), $loaded->fields() ) );
-		$this->assertSame( array( 'medellin', 'bogota' ), array_column( $loaded->toArray()['fields'][7]['options'], 'value' ) );
+		$this->assertSame( array( 'medellin', 'bogota' ), array_column( array_values( array_filter( $loaded->toArray()['fields'], static fn ( array $field ): bool => 'checkbox' === $field['type'] ) )[0]['options'], 'value' ) );
 		$this->assertSame( 25, $loaded->settings()['capacity'] );
 		$this->assertTrue( $loaded->settings()['waitlist'] );
 		$this->assertSame( '2026-11-01 09:00:00', $loaded->settings()['opens_at'] );
 		$this->assertSame( '2026-11-04 09:00:00', $loaded->settings()['event']['starts_at'] );
-		$this->assertTrue( $loaded->toArray()['fields'][2]['required'] );
+		$this->assertTrue( array_values( array_filter( $loaded->toArray()['fields'], static fn ( array $field ): bool => 'consent' === $field['type'] ) )[0]['required'] );
 	}
 
 	public function test_editor_generates_option_values_on_server_and_remaps_defaults(): void {
@@ -287,7 +287,7 @@ final class RepositoriesTest extends TestCase {
 			$this->assertSame( 'draft', $saved->get( 'status' ) );
 			$this->assertSame( count( $template['fields'] ), count( array_unique( array_column( $template['fields'], 'key' ) ) ) );
 		}
-		$this->assertSame( 3, $this->forms->count() );
+		$this->assertSame( count( Templates::all() ), $this->forms->count() );
 		$this->assertSame( 1, $this->forms->count( array( 'search' => 'Webinar' ) ) );
 	}
 
@@ -327,7 +327,7 @@ final class RepositoriesTest extends TestCase {
 		ob_start(); ( new FormEditorPage( $this->forms ) )->render(); $html = ob_get_clean();
 		$this->assertStringContainsString( 'name="tbreg_nonce"', $html );
 		$this->assertStringContainsString( 'name="tbreg_fields"', $html );
-		$this->assertSame( 15, substr_count( $html, 'class="button tbreg-add-field"' ) );
+		$this->assertSame( count( Field::TYPES ), substr_count( $html, 'class="button tbreg-add-field"' ) );
 		$this->assertSame( 4, substr_count( $html, 'role="tabpanel"' ) );
 		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
 		if ( false !== $directory && is_dir( $directory ) ) {

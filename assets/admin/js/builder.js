@@ -54,6 +54,7 @@
 		if (!hasPlaceholder(field.type)) field.placeholder = '';
 		if (!rolesFor(field.type).includes(field.role)) field.role = null;
 		if (['heading', 'hidden'].includes(field.type)) field.required = false;
+		if (field.type === 'photo') field.default = '';
 		if (field.type === 'consent') { field.required = true; field.default = ''; }
 		if (field.type === 'heading') { field.default = ''; field.width = 'full'; }
 		if (field.type !== 'hidden') field.query_param = '';
@@ -120,6 +121,7 @@
 	};
 	const remapDefault = (field, oldValue, value) => {
 		if (!oldValue) return;
+		fields.forEach(child=>(child.options||[]).forEach(option=>{if(option.when && option.when[field.key]) option.when[field.key]=option.when[field.key].map(item=>item===oldValue?value:item);}));
 		if (Array.isArray(field.default)) field.default = field.default.map(item => item === oldValue ? value : item);
 		else if (field.default === oldValue) field.default = value;
 	};
@@ -140,6 +142,28 @@
 			const input = control(parent, labels.default, field.default, value => { field.default = value; }, null, type);
 			if (type === 'number') input.step = 'any';
 		}
+	};
+	const renderConditions = (row, field, option) => {
+		const host = el('div',undefined,'tbreg-option-conditions'); host.append(el('p',labels.conditionsHelp,'description')); row.append(host);
+		option.when = option.when || {};
+		Object.entries(option.when).forEach(([parentKey, allowed]) => {
+			const line = el('div',undefined,'tbreg-condition'); host.append(line);
+			const candidates = fields.filter(parent=>!parent.archived && parent.key!==field.key && ['select','radio'].includes(parent.type));
+			const choices = Object.fromEntries(candidates.map(parent=>[parent.key,parent.label]));
+			if (!choices[parentKey]) choices[parentKey] = parentKey;
+			control(line,labels.condition,parentKey,next=>{if(next!==parentKey){ delete option.when[parentKey]; const parent=fields.find(item=>item.key===next); option.when[next]=parent && parent.options.length ? [parent.options[0].value] : []; sync(); render(field.key); }},choices);
+			const parent = fields.find(item=>item.key===parentKey); const group=el('fieldset'); group.append(el('legend',labels.conditionValues)); line.append(group);
+			(parent ? parent.options : []).forEach(choice=>{
+				const label=el('label',undefined,'tbreg-checkbox');const check=el('input');check.type='checkbox';check.checked=allowed.includes(choice.value);
+				check.addEventListener('change',()=>{option.when[parentKey]=Array.from(group.querySelectorAll('input:checked'),node=>node.value);sync();});check.value=choice.value;label.append(check,document.createTextNode(choice.label));group.append(label);
+			});
+			line.append(button(labels.remove,()=>{delete option.when[parentKey];sync();render(field.key);}));
+		});
+		const add=button(labels.addCondition,()=>{
+			const parent=fields.find(item=>!item.archived && item.key!==field.key && ['select','radio'].includes(item.type) && !Object.hasOwnProperty.call(option.when,item.key));
+			if(parent){option.when[parent.key]=parent.options.length?[parent.options[0].value]:[];sync();render(field.key);}
+		});
+		add.disabled=Object.keys(option.when).length>=8 || !fields.some(item=>!item.archived && item.key!==field.key && ['select','radio'].includes(item.type) && !Object.hasOwnProperty.call(option.when,item.key)); host.append(add);
 	};
 	const renderOptions = (parent, field) => {
 		parent.append(el('h4', labels.options));
@@ -167,7 +191,7 @@
 				sync(); render(field.key);
 			}));
 			Array.from(actions.children).forEach((node, index) => { node.setAttribute('aria-label', node.textContent); node.title = node.textContent; node.textContent = ['↑', '↓', '×'][index]; });
-			row.append(actions); optionList.append(row);
+			row.append(actions); renderConditions(row,field,option); optionList.append(row);
 		});
 		if (window.jQuery && jQuery.fn.sortable) {
 			jQuery(optionList).sortable({ handle: '.tbreg-option-handle', items: '> li', update: () => {
@@ -231,7 +255,7 @@
 		if (hasPattern(field.type)) control(grid, labels.pattern, field.validation.pattern, value => { field.validation.pattern = value || null; });
 		if (field.type === 'hidden') control(grid, labels.queryParam, field.query_param || '', value => { field.query_param = value; });
 		if (isChoice(field)) renderOptions(body, field);
-		if (!['heading', 'consent'].includes(field.type)) {
+		if (!['heading', 'consent', 'photo'].includes(field.type)) {
 			const defaults = el('div', undefined, 'tbreg-default'); defaults.dataset.defaultKey = field.key; body.append(defaults); renderDefault(defaults, field);
 		}
 		item.append(details); return item;
@@ -273,7 +297,11 @@
 		const template = config.templates[document.getElementById('tbreg-template').value];
 		if (!template || (fields.some(field => !field.archived) && !window.confirm(labels.templateWarning))) return;
 		fields = fields.filter(field => field.archived || used.has(field.key)).map(field => ({ ...field, archived: true }));
-		fields = fields.concat(clone(template.fields).map(field => ({ ...field, key: newKey() })));
+		const incoming=clone(template.fields); const keyMap=Object.fromEntries(incoming.map(field=>[field.key,newKey()]));
+		incoming.forEach(field=>{field.key=keyMap[field.key];(field.options||[]).forEach(option=>{if(option.when) option.when=Object.fromEntries(Object.entries(option.when).map(([parent,values])=>[keyMap[parent]||parent,values]));});});
+		fields = fields.concat(incoming);
+		if (template.settings && template.settings.pdf_enabled !== undefined) form.elements['tbreg_settings[pdf_enabled]'].checked = template.settings.pdf_enabled;
+		if (template.settings && template.settings.receipt_text !== undefined) form.elements['tbreg_settings[receipt_text]'].value = template.settings.receipt_text;
 		if (template.settings && template.settings.event) form.elements['tbreg_settings[event][modality]'].value = template.settings.event.modality;
 		sync(); render(fields.find(field => !field.archived).key);
 	});

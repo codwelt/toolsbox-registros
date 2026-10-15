@@ -14,6 +14,7 @@ use Codwelt\ToolsBoxRegistros\Repository\FormRepository;
 use Codwelt\ToolsBoxRegistros\Repository\EntryRepository;
 use Codwelt\ToolsBoxRegistros\Services\SpamGuard;
 use Codwelt\ToolsBoxRegistros\Services\Validator;
+use Codwelt\ToolsBoxRegistros\Services\Photo;
 use Codwelt\ToolsBoxRegistros\Services\RegistrationRules;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -78,9 +79,10 @@ final class SubmissionHandler {
 	 * @param int                  $form_id Formulario.
 	 * @param array<string,mixed>  $input Entrada deslasheada o parámetros REST.
 	 * @param array<string,string> $transport Metadatos del servidor.
+	 * @param array<string,mixed>  $files Archivos recibidos por PHP.
 	 * @return array<string,mixed>|\WP_Error
 	 */
-	public function submit( int $form_id, array $input, array $transport ): array|\WP_Error {
+	public function submit( int $form_id, array $input, array $transport, array $files = array() ): array|\WP_Error {
 		try {
 			$form = $this->forms->find( $form_id );
 			if ( null === $form || in_array( $form->get( 'status' ), array( 'draft', 'trash' ), true ) ) {
@@ -102,6 +104,9 @@ final class SubmissionHandler {
 			if ( ! is_array( $raw ) ) {
 				return new \WP_Error( 'tbreg_values', __( 'Los valores del formulario no son válidos.', 'toolsbox-registros' ), array( 'status' => 422 ) );
 			}
+			$raw = Photo::uploads( $form, $raw, $files );
+			if ( is_wp_error( $raw ) ) {
+				return $raw; }
 			if ( ! $this->entries->supportsTransactions() ) {
 				return new \WP_Error( 'tbreg_storage', __( 'El servicio de inscripciones no está disponible. Contacta al administrador.', 'toolsbox-registros' ), array( 'status' => 503 ) );
 			}
@@ -130,6 +135,7 @@ final class SubmissionHandler {
 				'success'      => true,
 				'entry_id'     => $id,
 				'status'       => $entry['status'],
+				'pdf_url'      => $snapshot->settings()['pdf_enabled'] ? ( new Receipt( $this->forms, $this->entries ) )->issue( $id, $snapshot ) : '',
 				'message'      => 'waitlist' === $entry['status'] ? __( 'Tu inscripción quedó en lista de espera.', 'toolsbox-registros' ) : $snapshot->settings()['success_message'],
 				'redirect_url' => '' !== $snapshot->settings()['redirect_url'] ? self::safe_url( $snapshot->settings()['redirect_url'] ) : '',
 			);
@@ -166,21 +172,24 @@ final class SubmissionHandler {
 			wp_die( esc_html__( 'El envío requiere POST.', 'toolsbox-registros' ), '', array( 'response' => 405 ) );
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- submit() valida token firmado, reglas, estructura y cada campo.
-		$input  = wp_unslash( $_POST );
-		$id     = isset( $input['tbreg_form_id'] ) && is_scalar( $input['tbreg_form_id'] ) ? absint( $input['tbreg_form_id'] ) : 0;
-		$result = $this->submit( $id, $input, self::transport() );
+		$input = wp_unslash( $_POST );
+		$id    = isset( $input['tbreg_form_id'] ) && is_scalar( $input['tbreg_form_id'] ) ? absint( $input['tbreg_form_id'] ) : 0;
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- submit comprueba el token firmado antes de procesar archivos temporales de PHP.
+		$result = $this->submit( $id, $input, self::transport(), $_FILES );
 		$url    = explode( '#', self::safe_url( $input['tbreg_return'] ?? '' ), 2 )[0];
-		if ( ! is_wp_error( $result ) && '' !== $result['redirect_url'] ) {
+		if ( ! is_wp_error( $result ) && '' !== $result['redirect_url'] && empty( $result['pdf_url'] ) ) {
 			wp_safe_redirect( $result['redirect_url'], 303 );
 			exit;
 		}
 		$payload = is_wp_error( $result ) ? array(
-			'success' => false,
-			'message' => $result->get_error_message(),
-			'errors'  => $result->get_error_data()['fields'] ?? array(),
-			'values'  => $this->redisplay_values( $id, $input['tbreg_values'] ?? array() ),
+			'success'     => false,
+			'message'     => $result->get_error_message(),
+			'errors'      => $result->get_error_data()['fields'] ?? array(),
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- submit ya validó el token; solo se conserva un indicador booleano, nunca el archivo.
+			'photo_retry' => ! empty( $_FILES['tbreg_photos'] ),
+			'values'      => $this->redisplay_values( $id, $input['tbreg_values'] ?? array() ),
 		) : $result;
-		$token   = Feedback::store( $id, $payload );
+		$token = Feedback::store( $id, $payload );
 		wp_safe_redirect(
 			add_query_arg(
 				array(
@@ -208,7 +217,7 @@ final class SubmissionHandler {
 		}
 		foreach ( $form->fields() as $field ) {
 			$value = $raw[ $field->key() ] ?? '';
-			if ( ! $field->storesValue() || 'hidden' === $field->get( 'type' ) || 'consent' === $field->get( 'type' ) ) {
+			if ( ! $field->storesValue() || in_array( $field->get( 'type' ), array( 'hidden', 'consent', 'photo' ), true ) ) {
 				continue;
 			}
 			if ( is_array( $value ) && 'checkbox' === $field->get( 'type' ) ) {

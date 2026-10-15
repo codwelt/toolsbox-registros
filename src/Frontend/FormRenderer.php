@@ -65,19 +65,21 @@ final class FormRenderer {
 	/**
 	 * Renderiza datos públicos o una vista previa autorizada.
 	 *
-	 * @param Form|null $form Formulario.
-	 * @param bool      $preview Vista previa del editor.
+	 * @param Form|null           $form Formulario.
+	 * @param bool                $preview Vista previa del editor.
+	 * @param array<string,mixed> $presentation Clases por campo y carga de assets; solo afecta la presentación.
 	 * @return string
 	 */
-	public function render( ?Form $form, bool $preview = false ): string {
-		$preview = $preview && current_user_can( 'tbreg_manage_forms' );
+	public function render( ?Form $form, bool $preview = false, array $presentation = array() ): string {
+		$public_preview = true === ( $presentation['public_preview'] ?? false ) && current_user_can( 'edit_posts' ) && null !== $form && ! in_array( $form->get( 'status' ), array( 'draft', 'trash' ), true );
+		$preview        = $preview && ( current_user_can( 'tbreg_manage_forms' ) || $public_preview );
 		if ( null === $form || ( ! $preview && in_array( $form->get( 'status' ), array( 'draft', 'trash' ), true ) ) ) {
 			return '';
 		}
 		self::$instances[ $form->id() ] = ( self::$instances[ $form->id() ] ?? 0 ) + 1;
 		$instance                       = self::$instances[ $form->id() ];
 		$prefix                         = 'tbreg-form-' . $form->id() . ( $instance > 1 ? '-' . $instance : '' );
-		$assets                         = $this->assets( $preview );
+		$assets                         = false === ( $presentation['enqueue_assets'] ?? true ) ? '' : $this->assets( $preview );
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Solo consume el resultado PRG ligado a la cookie del navegador.
 		$token       = isset( $_GET['tbreg_result'] ) && is_string( $_GET['tbreg_result'] ) ? sanitize_key( $_GET['tbreg_result'] ) : '';
 		$result_form = isset( $_GET['tbreg_form'] ) && is_scalar( $_GET['tbreg_form'] ) ? absint( $_GET['tbreg_form'] ) : 0;
@@ -91,6 +93,7 @@ final class FormRenderer {
 				'messages/success.php',
 				array(
 					'message' => $feedback['message'],
+					'pdf_url' => $feedback['pdf_url'] ?? '',
 					'form_id' => $form->id(),
 					'id'      => $prefix,
 				)
@@ -133,6 +136,12 @@ final class FormRenderer {
 			if ( $field->get( 'archived' ) ) {
 				continue;
 			}
+			$classes = array();
+			foreach ( (array) ( $presentation['field_classes'][ $field->key() ] ?? array() ) as $class ) {
+				if ( is_string( $class ) && preg_match( '/^elementor-repeater-item-[a-z0-9_-]{1,64}$/D', $class ) ) {
+					$classes[] = $class;
+				}
+			}
 			$value = $feedback['values'][ $field->key() ] ?? $field->get( 'default' );
 			if ( 'consent' === $field->get( 'type' ) ) {
 				$value = '';
@@ -159,6 +168,8 @@ final class FormRenderer {
 				array(
 					'id'           => $id,
 					'error'        => $message,
+					'photo_retry'  => $feedback['photo_retry'] ?? false,
+					'css_classes'  => implode( ' ', $classes ),
 					'consent_text' => $settings['consent_text'],
 					'autofocus'    => ! $focused && $visible && '' !== $message,
 				)

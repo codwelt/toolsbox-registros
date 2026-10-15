@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Codwelt\ToolsBoxRegistros\Admin;
 
 use Codwelt\ToolsBoxRegistros\Services\SpamGuard;
+use Codwelt\ToolsBoxRegistros\Export\XlsxWriter;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -83,6 +84,10 @@ final class SettingsPage {
 		Menu::require_access( 'tbreg_manage_forms' );
 		?>
 		<div class="wrap tbreg-admin"><h1><?php esc_html_e( 'Ajustes', 'toolsbox-registros' ); ?></h1><?php Notices::render(); ?>
+		<?php
+		if ( ! XlsxWriter::available() ) :
+			?>
+			<div class="notice notice-warning"><p><?php esc_html_e( 'El servidor no dispone de ZipArchive. La exportación Excel está deshabilitada; puedes descargar CSV.', 'toolsbox-registros' ); ?></p></div><?php endif; ?>
 		<p><?php esc_html_e( 'Configura las claves de tu sitio y activa el servicio elegido en cada formulario. El honeypot y el límite de intentos funcionan sin captcha adicional.', 'toolsbox-registros' ); ?></p>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><input type="hidden" name="action" value="tbreg_save_captcha"><?php wp_nonce_field( 'tbreg_save_captcha', 'tbreg_nonce' ); ?>
 		<?php

@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Valida y normaliza la definición de un campo.
  */
 final class Field {
-	public const TYPES = array( 'text', 'email', 'tel', 'number', 'textarea', 'select', 'radio', 'checkbox', 'date', 'time', 'url', 'document', 'consent', 'heading', 'hidden' );
+	public const TYPES = array( 'text', 'email', 'tel', 'number', 'textarea', 'select', 'radio', 'checkbox', 'date', 'time', 'url', 'document', 'consent', 'heading', 'hidden', 'photo' );
 
 	/**
 	 * Definición normalizada.
@@ -68,6 +68,8 @@ final class Field {
 			if ( in_array( $type, array( 'heading', 'hidden' ), true ) ) {
 				$data['required'] = false;
 			}
+			if ( 'photo' === $type ) {
+				$data['default'] = ''; }
 			if ( 'consent' === $type ) {
 				$data['required'] = true;
 				$data['default']  = '';
@@ -140,11 +142,28 @@ final class Field {
 			if ( '' === $value || '' === $label || in_array( $value, $seen, true ) ) {
 				throw new \InvalidArgumentException( __( 'Las opciones no pueden estar vacías ni repetir valores.', 'toolsbox-registros' ) );
 			}
+			$when = $option['when'] ?? array();
+			if ( ! is_array( $when ) || count( $when ) > 8 ) {
+				throw new \InvalidArgumentException( __( 'Las condiciones de la opción no son válidas.', 'toolsbox-registros' ) );
+			}
+			foreach ( $when as $parent => $allowed ) {
+				if ( ! is_string( $parent ) || ! preg_match( '/^[a-z0-9_]{3,64}$/D', $parent ) || ! is_array( $allowed ) || array_values( $allowed ) !== $allowed || array() === $allowed || count( $allowed ) > 500 ) {
+					throw new \InvalidArgumentException( __( 'Cada condición necesita un campo y una lista de opciones.', 'toolsbox-registros' ) );
+				}
+				foreach ( $allowed as $item ) {
+					if ( ! is_string( $item ) || '' === $item || sanitize_text_field( $item ) !== $item ) {
+						throw new \InvalidArgumentException( __( 'El valor de una condición no es válido.', 'toolsbox-registros' ) );
+					}
+				}
+				$when[ $parent ] = array_values( array_unique( $allowed ) );
+			}
 			$seen[]              = $value;
 			$result['options'][] = array(
 				'value' => $value,
 				'label' => $label,
 			);
+			if ( array() !== $when ) {
+				$result['options'][ count( $result['options'] ) - 1 ]['when'] = $when; }
 		}
 
 		$default = $data['default'] ?? '';

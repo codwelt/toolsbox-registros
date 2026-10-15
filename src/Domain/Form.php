@@ -112,6 +112,7 @@ final class Form {
 			$keys[]   = $field->key();
 			$fields[] = $field;
 		}
+		ConditionalOptions::schema( $fields );
 		$result['settings'] = self::normalize_settings( self::decode( $data['settings'] ?? array() ) );
 		return new self( $result, $fields );
 	}
@@ -158,7 +159,7 @@ final class Form {
 	 */
 	private static function normalize_settings( array $settings ): array {
 		$result = array();
-		foreach ( array( 'waitlist', 'require_login' ) as $name ) {
+		foreach ( array( 'waitlist', 'require_login', 'pdf_enabled' ) as $name ) {
 			$result[ $name ] = $settings[ $name ] ?? false;
 			if ( ! is_bool( $result[ $name ] ) ) {
 				throw new \InvalidArgumentException( __( 'Los ajustes de lista de espera y acceso deben ser booleanos.', 'toolsbox-registros' ) );
@@ -185,6 +186,7 @@ final class Form {
 			'opens_at'        => '',
 			'closes_at'       => '',
 			'consent_text'    => '',
+			'receipt_text'    => '',
 		);
 		foreach ( $texts as $name => $default ) {
 			$value = $settings[ $name ] ?? $default;

@@ -104,6 +104,10 @@ final class EntriesPage {
 		if ( null !== $table->error ) {
 			echo '<div class="notice notice-error"><p>' . esc_html( $table->error->get_error_message() ) . '</p></div>';}
 		?>
+		<?php
+		if ( current_user_can( 'tbreg_export_entries' ) && null === $table->error && isset( $filters['form_id'] ) ) :
+			?>
+			<p><a class="button" href="<?php echo esc_url( add_query_arg( array( 'page' => 'toolsbox-registros-export' ), EntriesFilters::list_url( $filters ) ) ); ?>"><?php esc_html_e( 'Exportar este formulario', 'toolsbox-registros' ); ?></a></p><?php endif; ?>
 		<form method="get" class="tbreg-entry-filters"><input type="hidden" name="page" value="toolsbox-registros-entries">
 		<label for="tbreg-form-filter"><?php esc_html_e( 'Formulario', 'toolsbox-registros' ); ?></label>
 		<select id="tbreg-form-filter" name="form_id"><option value="0"><?php esc_html_e( 'Todos los formularios', 'toolsbox-registros' ); ?></option>

@@ -1,0 +1,16 @@
+{
+  "native_conversion": true,
+  "spreadsheet_id": "1pO_arUqsp1wJYY58jdtrsKaw6uPKTWzyKcHTSBKqeJM",
+  "sheet_title": "Seminario Bogotá 😀",
+  "frozen_rows": 1,
+  "range_checked": "A1:I3",
+  "document_F2": "00012345678901234567",
+  "document_type": "stringValue",
+  "formula_test_D2": "=HYPERLINK(\"https://example.test\",\"texto\")",
+  "formula_test_type": "stringValue",
+  "date_B2": "13/10/2026 00:00:00",
+  "unicode_D3": "Ana Muñoz 😀 2",
+  "archived_header_G1": "Ciudad (eliminado)",
+  "options_H2": "Diseño, Marketing",
+  "rendered_in_browser": true
+}

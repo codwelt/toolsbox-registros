@@ -50,6 +50,13 @@ final class Menu {
 	private EntryDetailPage $entry_detail;
 
 	/**
+	 * Configuración y descarga de exportaciones.
+	 *
+	 * @var ExportPage
+	 */
+	private ExportPage $export_page;
+
+	/**
 	 * Hooks autorizados para assets.
 	 *
 	 * @var array<string>
@@ -67,6 +74,7 @@ final class Menu {
 		$this->editor       = new FormEditorPage( $this->forms );
 		$this->entries_page = new EntriesPage( $entries, $this->forms );
 		$this->entry_detail = new EntryDetailPage( $entries, $this->forms );
+		$this->export_page  = new ExportPage( $this->forms, $entries );
 	}
 
 	/**
@@ -80,6 +88,7 @@ final class Menu {
 		add_action( 'admin_post_tbreg_save_form', array( $this->editor, 'handle_save' ) );
 		add_action( 'admin_post_tbreg_form_action', array( $this, 'handle_action' ) );
 		add_action( 'admin_post_tbreg_entries_action', array( $this->entries_page, 'handle_action' ) );
+		add_action( 'admin_post_tbreg_export_entries', array( $this->export_page, 'handle_download' ) );
 		add_action( 'admin_post_tbreg_save_entry', array( $this->entry_detail, 'handle_save' ) );
 		add_filter( 'set-screen-option', array( EntriesPage::class, 'screen_option' ), 10, 3 );
 		add_action( 'admin_post_tbreg_save_captcha', array( new SettingsPage(), 'handle_save' ) );
@@ -103,8 +112,8 @@ final class Menu {
 	 * @return void
 	 */
 	public function menu(): void {
-		$primary_cap     = current_user_can( 'tbreg_manage_forms' ) ? 'tbreg_manage_forms' : 'tbreg_view_entries';
-		$primary_render  = current_user_can( 'tbreg_manage_forms' ) ? 'render_forms' : 'render_entries';
+		$primary_cap     = current_user_can( 'tbreg_manage_forms' ) ? 'tbreg_manage_forms' : ( current_user_can( 'tbreg_view_entries' ) ? 'tbreg_view_entries' : 'tbreg_export_entries' );
+		$primary_render  = current_user_can( 'tbreg_manage_forms' ) ? 'render_forms' : ( current_user_can( 'tbreg_view_entries' ) ? 'render_entries' : 'render_export' );
 		$primary_hook    = add_menu_page( __( 'ToolsBox Registros', 'toolsbox-registros' ), __( 'ToolsBox Registros', 'toolsbox-registros' ), $primary_cap, 'toolsbox-registros', array( $this, $primary_render ), 'dashicons-clipboard' );
 		$this->screens[] = $primary_hook;
 		if ( 'render_entries' === $primary_render ) {
@@ -121,7 +130,6 @@ final class Menu {
 		add_submenu_page( 'toolsbox-registros', __( 'Acerca de / Más herramientas', 'toolsbox-registros' ), __( 'Acerca de / Más herramientas', 'toolsbox-registros' ), 'tbreg_manage_forms', 'https://codwelt.com/toolsbox-herramientas-digitales-gratis/' );
 		$this->screens[] = add_submenu_page( 'toolsbox-registros', __( 'Editar formulario', 'toolsbox-registros' ), __( 'Crear formulario', 'toolsbox-registros' ), 'tbreg_manage_forms', 'toolsbox-registros-edit', array( $this->editor, 'render' ) );
 		$this->screens[] = add_submenu_page( 'toolsbox-registros', __( 'Exportar', 'toolsbox-registros' ), __( 'Exportar', 'toolsbox-registros' ), 'tbreg_export_entries', 'toolsbox-registros-export', array( $this, 'render_export' ) );
-		remove_submenu_page( 'toolsbox-registros', 'toolsbox-registros-export' );
 	}
 
 	/**
@@ -242,14 +250,7 @@ final class Menu {
 	 * @return void
 	 */
 	public function render_export(): void {
-		self::require_access( 'tbreg_export_entries' );
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Lectura de selección ligada al usuario, creada tras nonce y autorización en POST.
-		$selection = isset( $_GET['tbreg_selection'] ) && is_string( $_GET['tbreg_selection'] ) ? EntriesPage::export_selection( sanitize_key( $_GET['tbreg_selection'] ) ) : array();
-		if ( array() !== $selection ) {
-			/* translators: 1: cantidad seleccionada; 2: ID del formulario. */
-			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'Selección preparada: %1$d inscripciones del formulario #%2$d. La descarga estará disponible en una próxima actualización.', 'toolsbox-registros' ), count( $selection['ids'] ), $selection['form_id'] ) ) . '</p></div>';
-		}
-		echo '<div class="wrap"><h1>' . esc_html__( 'Exportar inscripciones', 'toolsbox-registros' ) . '</h1><p>' . esc_html__( 'La exportación a Excel y CSV estará disponible en una próxima actualización.', 'toolsbox-registros' ) . '</p></div>';
+		$this->export_page->render();
 	}
 
 	/**
@@ -267,7 +268,7 @@ final class Menu {
 		if ( str_ends_with( $hook, '_page_toolsbox-registros-entry' ) ) {
 			wp_enqueue_style( 'tbreg-form', TBREG_URL . 'assets/public/css/form.css', array(), TBREG_VERSION );
 		}
-		if ( str_ends_with( $hook, '_page_toolsbox-registros-entry' ) || str_ends_with( $hook, '_page_toolsbox-registros-entries' ) ) {
+		if ( str_ends_with( $hook, '_page_toolsbox-registros-entry' ) || str_ends_with( $hook, '_page_toolsbox-registros-entries' ) || str_ends_with( $hook, '_page_toolsbox-registros-export' ) ) {
 			return;
 		}
 		if ( ! current_user_can( 'tbreg_manage_forms' ) ) {
@@ -315,6 +316,10 @@ final class Menu {
 			'drag'            => __( 'Arrastrar para ordenar', 'toolsbox-registros' ),
 			'options'         => __( 'Opciones', 'toolsbox-registros' ),
 			'value'           => __( 'Valor guardado', 'toolsbox-registros' ),
+			'condition'       => __( 'Disponible cuando', 'toolsbox-registros' ),
+			'conditionValues' => __( 'Opciones permitidas', 'toolsbox-registros' ),
+			'addCondition'    => __( 'Agregar condición', 'toolsbox-registros' ),
+			'conditionsHelp'  => __( 'Todas las condiciones deben cumplirse. Marca una o más opciones del campo del que depende.', 'toolsbox-registros' ),
 			'addOption'       => __( 'Agregar opción', 'toolsbox-registros' ),
 			'default'         => __( 'Valor predeterminado', 'toolsbox-registros' ),
 			'multipleDefault' => __( 'Valores predeterminados separados por coma', 'toolsbox-registros' ),

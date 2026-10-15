@@ -397,6 +397,19 @@ final class EntryRepository extends Repository {
 			$where[]  = 'e.form_id = %d';
 			$values[] = (int) $filters['form_id'];
 		}
+		if ( array_key_exists( 'entry_ids', $filters ) ) {
+			$ids = $filters['entry_ids'];
+			if ( ! is_array( $ids ) || array_values( $ids ) !== $ids || array() === $ids || count( $ids ) > 200 ) {
+				throw new \InvalidArgumentException( __( 'La selección de exportación no es válida.', 'toolsbox-registros' ) );
+			}
+			foreach ( $ids as $id ) {
+				if ( ! is_int( $id ) || $id < 1 ) {
+					throw new \InvalidArgumentException( __( 'La selección contiene un identificador no válido.', 'toolsbox-registros' ) );
+				}
+			}
+			$where[] = 'e.id IN (' . implode( ',', array_fill( 0, count( $ids ), '%d' ) ) . ')';
+			$values  = array_merge( $values, $ids );
+		}
 		if ( ! empty( $filters['status'] ) ) {
 			$where[]  = 'e.status = %s';
 			$values[] = (string) $filters['status'];
@@ -549,13 +562,14 @@ final class EntryRepository extends Repository {
 	 * @param int                 $form_id Formulario a exportar.
 	 * @param array<string,mixed> $filters Filtros de exportación.
 	 * @param int                 $chunk Tamaño de cada bloque.
+	 * @param Form|null           $schema Esquema congelado para decodificar valores.
 	 * @return \Generator<array<string,mixed>>
 	 */
-	public function iterateForExport( int $form_id, array $filters = array(), int $chunk = 500 ): \Generator {
+	public function iterateForExport( int $form_id, array $filters = array(), int $chunk = 500, ?Form $schema = null ): \Generator {
 		$filters['form_id']     = $form_id;
 		list( $where, $values ) = $this->where( $filters );
 		$ceiling                = (int) $this->scalar( 'SELECT MAX(e.id) FROM ' . $this->table( 'entries' ) . ' e WHERE ' . $where, $values );
-		$form                   = ( new FormRepository( $this->db ) )->find( $form_id );
+		$form                   = $schema ?? ( new FormRepository( $this->db ) )->find( $form_id );
 		$chunk                  = min( 5000, max( 1, $chunk ) );
 		$last                   = 0;
 		do {

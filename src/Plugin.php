@@ -44,6 +44,7 @@ final class Plugin {
 		}
 
 		$this->booted = true;
+		( new \Codwelt\ToolsBoxRegistros\Elementor\Integration() )->register();
 		Migrations::maybe_upgrade();
 		add_action( 'init', array( $this, 'load_translations' ) );
 		add_action( 'init', array( FormRenderer::class, 'register_assets' ) );
@@ -51,6 +52,7 @@ final class Plugin {
 		add_action( 'init', array( new Block(), 'register' ) );
 		add_action( 'rest_api_init', array( new SubmitController(), 'register' ) );
 		( new SubmissionHandler() )->register();
+		( new \Codwelt\ToolsBoxRegistros\Frontend\Receipt() )->register();
 		add_action( 'wp_scheduled_delete', array( TransientStore::class, 'cleanup' ), 11 );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Evita cachear páginas de resultados PRG privados; no ejecuta acciones.
 		if ( isset( $_GET['tbreg_result'] ) && ! defined( 'DONOTCACHEPAGE' ) ) {

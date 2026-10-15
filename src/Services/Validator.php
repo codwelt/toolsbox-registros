@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Codwelt\ToolsBoxRegistros\Services;
 
 use Codwelt\ToolsBoxRegistros\Domain\Form;
+use Codwelt\ToolsBoxRegistros\Domain\ConditionalOptions;
 use Codwelt\ToolsBoxRegistros\Domain\FieldTypeRegistry;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -52,6 +53,7 @@ final class Validator {
 				$values[ $key ] = $value;
 			}
 		}
+		$errors = array_merge( $errors, ConditionalOptions::errors( $form, $values ) );
 		if ( array() !== $errors ) {
 			return new \WP_Error(
 				'tbreg_validation',
@@ -78,7 +80,7 @@ final class Validator {
 		$errors   = array();
 		$registry = new FieldTypeRegistry();
 		foreach ( $form->fields() as $field ) {
-			if ( ! $field->storesValue() || in_array( $field->get( 'type' ), array( 'hidden', 'consent' ), true ) ) {
+			if ( ! $field->storesValue() || in_array( $field->get( 'type' ), array( 'hidden', 'consent', 'photo' ), true ) ) {
 				continue;
 			}
 			$key = $field->key();
@@ -110,6 +112,7 @@ final class Validator {
 				$changed[ $key ] = $value;
 			}
 		}
+		$errors = array_merge( $errors, ConditionalOptions::errors( $form, array_merge( $stored, $changed ), array_keys( $changed ) ) );
 		return array() === $errors ? $changed : new \WP_Error( 'tbreg_validation', __( 'Revisa los campos indicados.', 'toolsbox-registros' ), array( 'fields' => $errors ) );
 	}
 }

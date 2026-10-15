@@ -1,0 +1,21 @@
+{
+  "downloads": [
+    {
+      "format": "xlsx",
+      "status": 200,
+      "bytes": 3768,
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    },
+    {
+      "format": "csv",
+      "status": 200,
+      "bytes": 604,
+      "content_type": "text/csv; charset=UTF-8"
+    }
+  ],
+  "selected_id": 2,
+  "nonce_rejected": 403,
+  "permission_rejected": 403,
+  "get_rejected": 405,
+  "expired_selection_redirect": 303
+}

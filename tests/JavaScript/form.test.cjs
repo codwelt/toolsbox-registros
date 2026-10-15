@@ -74,7 +74,7 @@ test('fallo de red conserva valores, permite reintentar y enfoca el aviso', asyn
 });
 test('mensajes y errores del servidor se muestran como texto sin interpretar HTML', async () => {
 	const { dom, form, submit } = setup(async () => ({ ok: false, json: async () => ({ message: '<img src=x onerror=alert(1)>', data: { fields: { f_email: '<script>alert(1)</script>' } } }) }));
-	submit(); await tick(); assert.equal(form.querySelectorAll('img,script').length, 0); assert.match(form.querySelector('.tbreg-summary').textContent, /<img/); dom.window.close();
+	const before = form.querySelectorAll('img,script').length; submit(); await tick(); assert.equal(form.querySelectorAll('img,script').length, before); assert.equal(form.querySelectorAll('[onerror]').length, 0); assert.match(form.querySelector('.tbreg-summary').textContent, /<img/); dom.window.close();
 });
 test('IDs únicos y referencias accesibles resuelven en dos instancias del formulario', () => {
 	const { dom, w } = setup(null, false); const d = w.document; const ids = Array.from(d.querySelectorAll('[id]'), node => node.id);

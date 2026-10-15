@@ -59,7 +59,7 @@ final class SubmissionTest extends TestCase {
 	private function form( array $settings = array() ): Form {
 		$fields = array();
 		foreach ( Field::TYPES as $type ) {
-			$data = array( 'key' => 'f_' . $type, 'type' => $type, 'label' => 'Campo ' . $type, 'help' => 'Ayuda ' . $type, 'required' => ! in_array( $type, array( 'heading', 'hidden' ), true ) );
+			$data = array( 'key' => 'f_' . $type, 'type' => $type, 'label' => 'Campo ' . $type, 'help' => 'Ayuda ' . $type, 'required' => ! in_array( $type, array( 'heading', 'hidden', 'photo' ), true ) );
 			if ( in_array( $type, array( 'select', 'radio', 'checkbox' ), true ) ) $data['options'] = array( array( 'value' => 'a', 'label' => 'Bogotá' ), array( 'value' => 'b', 'label' => 'Medellín' ) );
 			if ( in_array( $type, array( 'email', 'document' ), true ) ) $data['role'] = $type;
 			if ( 'text' === $type ) { $data['role'] = 'name'; $data['width'] = 'half'; }

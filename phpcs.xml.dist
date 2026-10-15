@@ -40,10 +40,11 @@
             </property>
         </properties>
     </rule>
-    <!-- La API de entidades/repositorios usa los nombres camelCase fijados en PLAN.md. -->
+    <!-- Las APIs de entidades, repositorios y escritores usan los nombres fijados en PLAN.md. -->
     <rule ref="WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid">
         <exclude-pattern>*/src/Domain/*</exclude-pattern>
         <exclude-pattern>*/src/Repository/*</exclude-pattern>
+        <exclude-pattern>*/src/Export/ExporterInterface.php</exclude-pattern>
     </rule>
     <!-- Las excepciones de dominio se convierten en WP_Error; se escapan al renderizar. -->
     <rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">

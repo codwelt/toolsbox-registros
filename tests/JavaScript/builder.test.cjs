@@ -43,11 +43,18 @@ function setup(fields = [], used = []) {
 	return { dom, w, d, state, click, input, submit };
 }
 const textField = { key: 'f_existing', type: 'text', label: 'Nombre', options: [], width: 'full', role: null, required: false, archived: false, default: '', validation: {} };
-test('quince tipos, opciones y orden: serialización y recarga conservan claves', () => {
+test('plantilla de idiomas regenera claves y conserva relaciones editables y PDF',()=>{
+ const {dom,w,d,state}=setup();d.getElementById('tbreg-template').value='languages';d.getElementById('tbreg-apply-template').click();const fields=state();const keys=new Set(fields.map(field=>field.key));
+ assert.equal(fields.length,18);assert.equal(keys.size,18);assert.equal(d.querySelector('[name="tbreg_settings[pdf_enabled]"]').checked,true);
+ for(const field of fields)for(const option of field.options||[])for(const parent of Object.keys(option.when||{}))assert.ok(keys.has(parent));
+ const module=fields.find(field=>field.label==='Subnivel / módulo');const card=d.querySelector('[data-key="'+module.key+'"]');assert.ok(card.querySelector('.tbreg-option-conditions input[type="checkbox"]'));
+ const firstRule=card.querySelector('.tbreg-option-conditions');firstRule.querySelector('input[type="checkbox"]').click();assert.ok(Object.values(state().find(field=>field.key===module.key).options[0].when)[0].length===0);dom.window.close();
+});
+test('tipos nativos, opciones y orden: serialización y recarga conservan claves', () => {
 	const { dom, w, d, state, input, click, submit } = setup();
 	for (const type of Object.keys(w.tbreg_builder.types)) d.querySelector('[data-type="' + type + '"]').click();
-	assert.equal(state().length, 15);
-	assert.equal(new Set(state().map(field => field.key)).size, 15);
+	assert.equal(state().length, Object.keys(w.tbreg_builder.types).length);
+	assert.equal(new Set(state().map(field => field.key)).size, Object.keys(w.tbreg_builder.types).length);
 	for (const field of state().filter(field => ['select', 'radio', 'checkbox'].includes(field.type))) {
 		let card = d.querySelector('[data-key="' + field.key + '"]');
 		input(card.querySelector('.tbreg-option'), 'label', 'Bogotá');
@@ -67,7 +74,7 @@ test('quince tipos, opciones y orden: serialización y recarga conservan claves'
 	fs.writeFileSync(path.join(fixtureDir, 'dom-fields.json'), JSON.stringify(saved));
 	const reloaded = setup(saved);
 	assert.deepEqual(reloaded.state(), saved);
-	assert.equal(reloaded.d.querySelectorAll('.tbreg-field').length, 15);
+	assert.equal(reloaded.d.querySelectorAll('.tbreg-field').length, Object.keys(w.tbreg_builder.types).length);
 	reloaded.dom.window.close(); dom.window.close();
 });
 test('opciones nuevas generan valores y los valores editados son estables', () => {

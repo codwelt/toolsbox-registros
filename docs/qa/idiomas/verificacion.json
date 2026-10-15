@@ -1,0 +1,19 @@
+{
+  "plugin_version": "0.2.0",
+  "date": "2026-10-14",
+  "TBREG_RUN_INTEGRATION": "1",
+  "php_tests": 139,
+  "php_assertions": 1319,
+  "dom_tests": 27,
+  "phpcs_files": 83,
+  "php_syntax_files": 93,
+  "javascript_files": 3,
+  "cjs_test_files": 5,
+  "requested_draft_id": 5,
+  "requested_draft_status": "draft",
+  "plugin_active": true,
+  "qa_tables_removed": true,
+  "pdf_pages_sample": 2,
+  "physical_camera_tested": false,
+  "camera_flow_tested_with_simulation": true
+}

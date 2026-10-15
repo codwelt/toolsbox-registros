@@ -52,7 +52,7 @@ final class FieldView {
 				)
 			) . '>';
 		}
-		$class = 'tbreg-field tbreg-width-' . $field->get( 'width' ) . ' ' . $field->get( 'css_class' );
+		$class = 'tbreg-field tbreg-width-' . $field->get( 'width' ) . ' ' . $field->get( 'css_class' ) . ' ' . ( $context['css_classes'] ?? '' );
 		if ( 'heading' === $type ) {
 			return '<div class="' . esc_attr( $class ) . '"><h3>' . esc_html( $field->get( 'label' ) ) . '</h3><p>' . esc_html( $field->get( 'help' ) ) . '</p></div>';
 		}
@@ -81,12 +81,13 @@ final class FieldView {
 				$attrs              = array_merge(
 					$attributes,
 					array(
-						'type'     => $type,
-						'id'       => $id . '-' . $index,
-						'name'     => $name . ( 'checkbox' === $type ? '[]' : '' ),
-						'value'    => $option['value'],
-						'required' => 'radio' === $type && $required,
-						'checked'  => in_array( $option['value'], is_array( $value ) ? $value : array( $value ), true ),
+						'type'            => $type,
+						'id'              => $id . '-' . $index,
+						'name'            => $name . ( 'checkbox' === $type ? '[]' : '' ),
+						'value'           => $option['value'],
+						'data-tbreg-when' => empty( $option['when'] ) ? null : wp_json_encode( $option['when'] ),
+						'required'        => 'radio' === $type && $required,
+						'checked'         => in_array( $option['value'], is_array( $value ) ? $value : array( $value ), true ),
 					)
 				);
 				$attrs['autofocus'] = 0 === $index && ( $context['autofocus'] ?? false );
@@ -121,7 +122,7 @@ final class FieldView {
 				$html .= '<textarea' . self::attributes( $attributes ) . ' rows="4">' . esc_textarea( (string) $value ) . '</textarea>'; } elseif ( 'select' === $type ) {
 				$html .= '<select' . self::attributes( $attributes ) . '><option value="">' . esc_html__( 'Selecciona una opción', 'toolsbox-registros' ) . '</option>';
 				foreach ( $field->get( 'options' ) as $option ) {
-					$html .= '<option value="' . esc_attr( $option['value'] ) . '" ' . selected( $value, $option['value'], false ) . '>' . esc_html( $option['label'] ) . '</option>';
+					$html .= '<option value="' . esc_attr( $option['value'] ) . '"' . self::attributes( array( 'data-tbreg-when' => empty( $option['when'] ) ? null : wp_json_encode( $option['when'] ) ) ) . ' ' . selected( $value, $option['value'], false ) . '>' . esc_html( $option['label'] ) . '</option>';
 				}
 				$html .= '</select>';
 				} else {

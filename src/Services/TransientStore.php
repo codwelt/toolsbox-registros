@@ -72,7 +72,7 @@ final class TransientStore {
 	public static function cleanup(): void {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Mantenimiento de transients propios, sin cachear una lista de filas caducadas.
-		$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE (option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s) AND CAST(option_value AS UNSIGNED) < %d", $wpdb->esc_like( '_transient_timeout_tbreg_feedback_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_rate_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_selection_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_entry_error_' ) . '%', time() ) );
+		$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE (option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s) AND CAST(option_value AS UNSIGNED) < %d", $wpdb->esc_like( '_transient_timeout_tbreg_feedback_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_rate_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_selection_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_entry_error_' ) . '%', $wpdb->esc_like( '_transient_timeout_tbreg_receipt_' ) . '%', time() ) );
 		foreach ( $names as $name ) {
 			self::delete( substr( $name, strlen( '_transient_timeout_' ) ) );
 		}
