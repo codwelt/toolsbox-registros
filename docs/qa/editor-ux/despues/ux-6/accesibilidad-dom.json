@@ -1,0 +1,18 @@
+{
+  "colors": [
+    {
+      "background": "rgb(240, 240, 241)",
+      "color": "rgb(60, 67, 74)",
+      "selector": ".tbreg-type-badge"
+    },
+    {
+      "background": "rgb(240, 240, 241)",
+      "color": "rgb(60, 67, 74)",
+      "selector": ".tbreg-status-badge"
+    }
+  ],
+  "idCount": 323,
+  "missing": [],
+  "status": "Guardado hace 1 día",
+  "uniqueCount": 323
+}

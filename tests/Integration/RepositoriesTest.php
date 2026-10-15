@@ -180,8 +180,8 @@ final class RepositoriesTest extends TestCase {
 		$input = $this->editor_input( $form );
 		if ( $directory && is_file( $directory . '/dom-roundtrip.json' ) ) {
 			$input['tbreg_fields'] = file_get_contents( $directory . '/dom-roundtrip.json' );
-			$this->assertSame( $original, json_decode( $input['tbreg_fields'], true, 512, JSON_THROW_ON_ERROR ) );
 		}
+		$this->assertSame( $original, json_decode( $input['tbreg_fields'], true, 512, JSON_THROW_ON_ERROR ) );
 		$saved = ( new FormEditorPage( $this->forms ) )->save( $input );
 		$this->assertInstanceOf( Form::class, $saved );
 		$this->assertSame( wp_json_encode( $original ), wp_json_encode( $saved->toArray()['fields'] ) );

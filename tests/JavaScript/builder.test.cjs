@@ -550,3 +550,45 @@ test('blur nativo al ocultar el selector no reentra en el cierre ni pierde el fo
 	assert.equal(calls, 1); assert.equal(d.activeElement.id, 'tbreg-admin-subject'); assert.equal(picker.hidden, true);
 	assert.equal(d.getElementById('tbreg-admin-subject').value, '{event_name}'); assert.equal(d.getElementById('tbreg-merge-status').textContent, 'Dato insertado: Nombre del evento.'); dom.window.close();
 });
+
+test('Siempre es un interruptor excluyente y no borra reglas de otros padres', () => {
+	const { dom, d, state, click } = setup([levels, courses, modules]); const card = () => d.querySelector('[data-key="f_module"]'); section(d, 'f_module', 'options');
+	let free = card().querySelectorAll('.tbreg-primary-condition')[1]; let always = free.querySelector('[role="switch"]');
+	assert.equal(always.getAttribute('aria-checked'), 'true'); assert.ok([...free.querySelectorAll('input')].every(input => input.disabled));
+	assert.ok(d.getElementById(always.getAttribute('aria-controls'))); always.click();
+	free = card().querySelectorAll('.tbreg-primary-condition')[1]; assert.ok([...free.querySelectorAll('input')].every(input => !input.disabled)); free.querySelector('input[value="b"]').click();
+	assert.deepEqual(state()[2].options[1].when, { f_level: ['b'] });
+	card().querySelector('.tbreg-primary-condition [role="switch"]').click();
+	assert.deepEqual(state()[2].options[0].when, { f_course: ['j'] });
+	assert.ok([...card().querySelector('.tbreg-primary-condition').querySelectorAll('input')].every(input => input.disabled));
+	click(card(), 'matrix'); const cells = card().querySelectorAll('.tbreg-matrix tbody tr');
+	assert.match(cells[0].lastElementChild.textContent, /Curso = Japonés/); assert.equal(cells[1].lastElementChild.textContent, 'Ninguna'); dom.window.close();
+});
+test('matriz desactiva las casillas excluidas y las flechas saltan celdas desactivadas', () => {
+	const extra = { ...modules.options[0], label: 'Tres', value: 'tres' }; const { dom, w, d, state, click } = setup([levels, courses, { ...modules, options: [...modules.options, extra] }]);
+	section(d, 'f_module', 'options'); let card = d.querySelector('[data-key="f_module"]'); click(card, 'matrix'); card = d.querySelector('[data-key="f_module"]');
+	const rows = card.querySelectorAll('.tbreg-matrix tbody tr'); const free = rows[1].querySelectorAll('input');
+	assert.equal(free[0].getAttribute('role'), 'switch'); assert.equal(free[0].checked, true); assert.equal(free[1].disabled, true);
+	const before = state(); const first = rows[0].querySelector('input[aria-label="Uno: Básico"]'); first.focus(); first.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+	assert.equal(d.activeElement.getAttribute('aria-label'), 'Tres: Básico'); assert.deepEqual(state(), before);
+	free[0].click(); assert.equal(free[1].disabled, false); free[1].click(); assert.deepEqual(state()[2].options[1].when, { f_level: ['b'] });
+	free[0].click(); assert.equal(free[1].disabled, true); assert.equal(state()[2].options[1].when, undefined); dom.window.close();
+});
+test('aviso de redirección solo muestra una dirección guardada o escrita, como texto', () => {
+	const { dom, w, d } = setup(); const url = setting(d, 'redirect_url'); const help = d.getElementById('tbreg-redirect-help');
+	assert.equal(help.hidden, true); assert.equal(help.textContent, '');
+	d.querySelector('[name="tbreg_after_submit"][value="redirect"]').click(); url.value = 'https://example.test/<b>'; url.dispatchEvent(new w.Event('input', { bubbles: true })); assert.equal(help.hidden, true);
+	d.querySelector('[name="tbreg_after_submit"][value="message"]').click(); assert.equal(help.hidden, false); assert.ok(help.textContent.includes('https://example.test/<b>')); assert.equal(help.querySelector('b'), null);
+	url.value = ''; url.dispatchEvent(new w.Event('input', { bubbles: true })); assert.equal(help.hidden, true); dom.window.close();
+	const saved = setup(settingsFields, [], settingsHtml); const oldUrl = setting(saved.d, 'redirect_url'); oldUrl.value = ''; saved.d.querySelector('[name="tbreg_after_submit"][value="message"]').click();
+	assert.equal(saved.d.getElementById('tbreg-redirect-help').hidden, false); assert.match(saved.d.getElementById('tbreg-redirect-help').textContent, /https:\/\/example.test\/gracias/); saved.dom.window.close();
+});
+test('IDs y relaciones ARIA resuelven después de insertar, duplicar y cambiar vistas', () => {
+	const { dom, d, click } = setup([levels, courses, modules]); section(d, 'f_module', 'options'); let card = d.querySelector('[data-key="f_module"]');
+	click(card, 'duplicate'); d.querySelector('[data-key="f_module"] .tbreg-insert-button').click(); d.querySelector('[data-type="text"]').click(); card = d.querySelector('[data-key="f_module"]'); section(d, 'f_module', 'options'); click(card, 'matrix');
+	const ids = [...d.querySelectorAll('[id]')].map(node => node.id); assert.equal(new Set(ids).size, ids.length);
+	for (const node of d.querySelectorAll('[aria-controls], [aria-labelledby], [aria-describedby]')) {
+		for (const attribute of ['aria-controls', 'aria-labelledby', 'aria-describedby']) for (const id of (node.getAttribute(attribute) || '').split(/\s+/).filter(Boolean)) assert.ok(d.getElementById(id), attribute + ': ' + id);
+	}
+	for (const label of d.querySelectorAll('label[for]')) assert.ok(d.getElementById(label.htmlFor)); dom.window.close();
+});

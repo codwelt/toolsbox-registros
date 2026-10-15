@@ -1,0 +1,80 @@
+{
+  "phase": "UX-6",
+  "date": "2026-10-15",
+  "version": "0.3.7",
+  "status": "complete",
+  "form_id": 5,
+  "form_5_unchanged": true,
+  "screenshots": 24,
+  "viewport_widths": [
+    1400,
+    1024,
+    782,
+    375
+  ],
+  "horizontal_page_overflows": 0,
+  "views": [
+    "fields",
+    "settings",
+    "notifications",
+    "open_card",
+    "matrix",
+    "inserter"
+  ],
+  "module_card_height_1400": 777.8125,
+  "option_row_height_1400": 45,
+  "always_exclusive": true,
+  "other_conditions_empty_label": "Ninguna",
+  "redirect_warning": "Solo Mostrar mensaje con URL guardada o escrita; dirección insertada como texto.",
+  "assertion_count": {
+    "previous_without_fixture": 5,
+    "previous_with_fixture": 6,
+    "reason": "Aserción condicionada a la existencia de dom-roundtrip.json, ahora incondicional.",
+    "full_without_fixture": {
+      "tests": 152,
+      "assertions": 1461
+    },
+    "full_with_dom": {
+      "tests": 152,
+      "assertions": 1461
+    }
+  },
+  "tests": {
+    "TBREG_RUN_INTEGRATION": "1",
+    "php_tests": 152,
+    "php_assertions": 1461,
+    "php_skipped": 0,
+    "dom_tests": 64,
+    "css_contrast_tests": 1,
+    "javascript_failed": 0,
+    "phpcs_files": 86,
+    "phpcs_errors": 0,
+    "phpcs_warnings": 0
+  },
+  "contrast": {
+    "minimum": 5.153728272270258,
+    "maximum": 8.806281638607071,
+    "required_normal_text": 4.5
+  },
+  "native_qa": {
+    "temporary_form_id": 10,
+    "temporary_form_deleted": true,
+    "noop_fields_and_settings_identical_bytes": true,
+    "saved_field_count": 20,
+    "original_keys_preserved": true,
+    "new_keys_unique": true,
+    "intermediate_insertion_keyboard": true,
+    "duplication_keyboard": true,
+    "bulk_paste_and_matrix_rule_persisted": true,
+    "copy_live_message": "Shortcode copiado.",
+    "matrix_arrows_preserve_selection": true,
+    "keyboard_save": "Cmd+S",
+    "console_errors": 0
+  },
+  "activation": {
+    "WP_DEBUG": true,
+    "plugin_warnings": 0,
+    "checksums_and_counts_preserved": true
+  },
+  "scope": "Solo editor administrativo; no inicia notificaciones ni cambia el formulario público."
+}

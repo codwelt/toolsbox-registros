@@ -312,7 +312,11 @@ final class Menu {
 			'keyManual'       => __( 'Selecciona el identificador y cópialo con el teclado.', 'toolsbox-registros' ),
 			'editValue'       => __( 'Editar valor guardado', 'toolsbox-registros' ),
 			'parentField'     => __( 'Las opciones de este campo dependen de', 'toolsbox-registros' ),
-			'parentHelp'      => __( 'Elige un campo para editar sus condiciones. Siempre significa sin restricción por ese campo; las demás condiciones se conservan. Cada condición necesita al menos una opción.', 'toolsbox-registros' ),
+			'parentHelp'      => __( 'Elige un campo para editar sus condiciones. Desactiva Siempre para elegir opciones; las condiciones de otros campos se conservan. Cada condición necesita al menos una opción.', 'toolsbox-registros' ),
+			'noOtherRules'    => __( 'Ninguna', 'toolsbox-registros' ),
+			'alwaysHelp'      => __( 'Desactiva Siempre para elegir opciones de este campo.', 'toolsbox-registros' ),
+			/* translators: %s: Dirección de redirección que se eliminará al guardar. */
+			'redirectRemoval' => __( 'Si guardas con «Mostrar mensaje», se quitará la redirección a %s.', 'toolsbox-registros' ),
 			'always'          => __( 'Siempre', 'toolsbox-registros' ),
 			'matrix'          => __( 'Ver como matriz', 'toolsbox-registros' ),
 			'optionTable'     => __( 'Ver como tabla', 'toolsbox-registros' ),

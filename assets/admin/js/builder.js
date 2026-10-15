@@ -81,6 +81,7 @@
 			if (input && output) output.textContent = input.value ? input.value.replace('T', ' ').slice(0, 16) : labels.noDate;
 		}
 	};
+	const savedRedirectUrl = form.elements.namedItem('tbreg_settings[redirect_url]')?.value || '';
 	const updateSettingsUI = () => {
 		const setting = name => form.elements.namedItem('tbreg_settings[' + name + ']');
 		const mode = form.querySelector('[name="tbreg_after_submit"]:checked')?.value;
@@ -95,6 +96,13 @@
 		form.querySelectorAll('[data-tbreg-dependent]').forEach(panel => { panel.hidden = !visible[panel.dataset.tbregDependent]; });
 		const url = setting('redirect_url');
 		if (url) { url.disabled = mode === 'message'; url.required = mode === 'redirect'; url.setAttribute('aria-describedby', 'tbreg-redirect-help'); }
+		const redirectHelp = document.getElementById('tbreg-redirect-help');
+		if (redirectHelp && url) {
+			const destination = url.value.trim() || savedRedirectUrl;
+			redirectHelp.hidden = mode !== 'message' || !destination;
+			redirectHelp.textContent = destination ? labels.redirectRemoval.replace('%s', destination) : '';
+			if (redirectHelp.hidden) url.removeAttribute('aria-describedby');
+		}
 		const capacity = setting('capacity');
 		if (capacity) { capacity.setAttribute('aria-describedby', 'tbreg-capacity-help'); capacity.setAttribute('aria-controls', 'tbreg-waitlist-options'); }
 		const warning = document.getElementById('tbreg-duplicate-email-warning');
@@ -315,7 +323,7 @@
 	const primaryParent = field => {
 		if (parentViews.has(field.key)) return parentViews.get(field.key);
 		const keys = field.options.flatMap(option => Object.keys(option.when || {}));
-		return keys[0] || '';
+		const key = keys[0] || ''; parentViews.set(field.key, key); return key;
 	};
 	const setRule = (option, key, values) => {
 		if (values === null) {
@@ -336,18 +344,20 @@
 		const group = el('fieldset', undefined, 'tbreg-rule-chips tbreg-option-conditions');
 		const legend = el('legend', parent.label); legend.className = 'screen-reader-text'; group.append(legend);
 		const unrestricted = !Object.hasOwnProperty.call(option.when || {}, key);
-		const always = button(labels.always, () => { setRule(option, key, null); changedRule(null); }, 'tbreg-chip');
-		always.setAttribute('aria-pressed', String(unrestricted)); group.append(always);
+		const always = button(labels.always, () => { setRule(option, key, unrestricted ? [] : null); changedRule(null); }, 'tbreg-always-switch');
+		always.setAttribute('role', 'switch'); always.setAttribute('aria-checked', String(unrestricted));
+		const choices = el('span', undefined, 'tbreg-rule-values'); choices.id = 'tbreg-rule-values-' + (++serial); always.setAttribute('aria-controls', choices.id);
+		always.title = labels.alwaysHelp; always.disabled = unrestricted && Object.keys(option.when || {}).length >= 8; group.append(always, choices);
 		parent.options.forEach(choice => {
 			const label = el('label', undefined, 'tbreg-rule-chip');
 			const check = el('input'); check.type = 'checkbox'; check.value = choice.value;
 			check.checked = !unrestricted && option.when[key].includes(choice.value);
-			check.disabled = unrestricted && Object.keys(option.when || {}).length >= 8;
+			check.disabled = unrestricted;
 			check.addEventListener('change', () => {
 				const selected = [...group.querySelectorAll('input:checked')].map(input => input.value);
 				setRule(option, key, selected); changedRule(choice.value);
 			});
-			label.append(check, document.createTextNode(choice.label)); group.append(label);
+			label.append(check, document.createTextNode(choice.label)); choices.append(label);
 		});
 		group.classList.toggle('tbreg-rule-invalid', !unrestricted && !option.when[key].length);
 		host.append(group);
@@ -399,7 +409,8 @@
 				const cell = el('td'); const check = el('input'); check.type = 'checkbox';
 				check.setAttribute('aria-label', option.label + ': ' + (index ? parent.options[index - 1].label : labels.always));
 				check.checked = value === null ? unrestricted : !unrestricted && option.when[key].includes(value);
-				check.disabled = unrestricted && Object.keys(option.when || {}).length >= 8;
+				check.disabled = index === 0 ? unrestricted && Object.keys(option.when || {}).length >= 8 : unrestricted;
+				if (index === 0) check.setAttribute('role', 'switch');
 				check.addEventListener('change', () => {
 					if (value === null) setRule(option, key, check.checked ? null : []);
 					else {
@@ -408,19 +419,29 @@
 						setRule(option, key, parent.options.filter(choice => selected.includes(choice.value)).map(choice => choice.value));
 					}
 					const checks = row.querySelectorAll('input'); const always = !Object.hasOwnProperty.call(option.when || {}, key);
-					checks.forEach((input, i) => { input.checked = i === 0 ? always : !always && option.when[key].includes(parent.options[i - 1].value); });
+					checks.forEach((input, i) => { input.checked = i === 0 ? always : !always && option.when[key].includes(parent.options[i - 1].value); input.disabled = i === 0 ? always && Object.keys(option.when || {}).length >= 8 : always; });
 					row.classList.toggle('tbreg-rule-invalid', !always && !option.when[key].length);
 				});
 				cell.append(check); row.append(cell);
 			});
-			row.append(el('td', ruleSummary({ when: Object.fromEntries(Object.entries(option.when || {}).filter(([parentKey]) => parentKey !== key)) })));
+			const other = Object.fromEntries(Object.entries(option.when || {}).filter(([parentKey]) => parentKey !== key));
+			row.append(el('td', Object.keys(other).length ? ruleSummary({ when: other }) : labels.noOtherRules));
 			row.classList.toggle('tbreg-rule-invalid', !unrestricted && !option.when[key].length);
 		});
 		table.addEventListener('keydown', event => {
 			if (event.target.tagName !== 'INPUT' || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
 			event.preventDefault(); const rows = [...body.rows]; const row = event.target.closest('tr'); const inputs = [...row.querySelectorAll('input')]; const column = inputs.indexOf(event.target); const index = rows.indexOf(row);
-			const target = event.key === 'Home' ? inputs[0] : event.key === 'End' ? inputs.at(-1) : event.key === 'ArrowLeft' ? inputs[column - 1] : event.key === 'ArrowRight' ? inputs[column + 1] : rows[index + (event.key === 'ArrowUp' ? -1 : 1)]?.querySelectorAll('input')[column];
-			if (target && !target.disabled) target.focus();
+			let target;
+			if (event.key === 'Home' || event.key === 'End') {
+				const enabled = inputs.filter(input => !input.disabled); target = event.key === 'Home' ? enabled[0] : enabled.at(-1);
+			} else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+				const step = event.key === 'ArrowLeft' ? -1 : 1;
+				for (let next = column + step; next >= 0 && next < inputs.length; next += step) { if (!inputs[next].disabled) { target = inputs[next]; break; } }
+			} else {
+				const step = event.key === 'ArrowUp' ? -1 : 1;
+				for (let next = index + step; next >= 0 && next < rows.length; next += step) { const candidate = rows[next].querySelectorAll('input')[column]; if (candidate && !candidate.disabled) { target = candidate; break; } }
+			}
+			if (target) target.focus();
 		});
 		const scroll = el('div', undefined, 'tbreg-matrix-scroll'); scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', field.label + ' × ' + parent.label); scroll.append(table); host.append(scroll);
 	};

@@ -485,7 +485,7 @@ final class FormEditorPage {
 				</fieldset>
 				<div id="tbreg-success-options" data-tbreg-dependent="message"><?php $this->control( 'tbreg_settings[success_message]', __( 'Mensaje de éxito', 'toolsbox-registros' ), $settings['success_message'], 'textarea' ); ?></div>
 				<div id="tbreg-redirect-options" data-tbreg-dependent="redirect"><?php $this->control( 'tbreg_settings[redirect_url]', __( 'Redirección después de inscribirse', 'toolsbox-registros' ), $settings['redirect_url'], 'url' ); ?></div>
-				<p id="tbreg-redirect-help" class="description"><?php esc_html_e( 'Puedes alternar sin perder la URL antes de guardar. Al guardar «Mostrar mensaje», se elimina la redirección.', 'toolsbox-registros' ); ?></p>
+				<p id="tbreg-redirect-help" class="description" <?php echo '' === $settings['redirect_url'] ? 'hidden' : ''; ?>><?php echo esc_html( sprintf( /* translators: %s: Dirección de redirección que se eliminará al guardar. */ __( 'Si guardas con «Mostrar mensaje», se quitará la redirección a %s.', 'toolsbox-registros' ), $settings['redirect_url'] ) ); ?></p>
 				<?php $this->control( 'tbreg_settings[submit_label]', __( 'Texto del botón de envío', 'toolsbox-registros' ), $settings['submit_label'] ); ?>
 			</section>
 			<section class="tbreg-settings-card postbox" aria-labelledby="tbreg-pdf-title">

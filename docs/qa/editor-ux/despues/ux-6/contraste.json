@@ -1,0 +1,38 @@
+[
+  {
+    "selector": ".tbreg-type-badge",
+    "color": "#3c434a",
+    "background": "#f0f0f1",
+    "contrast": 8.806281638607071
+  },
+  {
+    "selector": ".tbreg-status-badge",
+    "color": "#3c434a",
+    "background": "#f0f0f1",
+    "contrast": 8.806281638607071
+  },
+  {
+    "selector": ".tbreg-status-badge[data-status=\"published\"]",
+    "color": "#005c12",
+    "background": "#edfaef",
+    "contrast": 7.68688014028162
+  },
+  {
+    "selector": ".tbreg-status-badge[data-status=\"closed\"]",
+    "color": "#614200",
+    "background": "#fcf9e8",
+    "contrast": 8.67936699120913
+  },
+  {
+    "selector": ".tbreg-rule-chip:has(input:checked)",
+    "color": "#135e96",
+    "background": "#f0f6fc",
+    "contrast": 6.286063952100038
+  },
+  {
+    "selector": ".tbreg-rule-chip:has(input:disabled)",
+    "color": "#646970",
+    "background": "#f6f7f7",
+    "contrast": 5.153728272270258
+  }
+]
