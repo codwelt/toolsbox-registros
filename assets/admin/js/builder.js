@@ -42,7 +42,38 @@
 	const used = new Set(config.used);
 	let fields = clone(config.fields);
 	let changed = false;
+	let submitting = false;
 	let serial = 0;
+	const saveStatus = document.getElementById('tbreg-builder-status');
+	const savedStatus = saveStatus.textContent;
+	const saveButtons = [...form.querySelectorAll('[data-tbreg-save]')];
+	const showSaveStatus = text => {
+		if (saveStatus.textContent !== text) saveStatus.textContent = text;
+		form.querySelectorAll('[data-tbreg-save-status]').forEach(node => { node.textContent = text; });
+	};
+	const publishDetails = form.querySelector('.tbreg-publish-details');
+	if (publishDetails && window.matchMedia) {
+		const desktop = window.matchMedia('(min-width: 1100px)');
+		const adaptPanel = () => { publishDetails.open = desktop.matches; };
+		adaptPanel(); desktop.addEventListener('change', adaptPanel);
+	}
+	const updatePublishSummary = () => {
+		const status = form.elements.namedItem('tbreg_status');
+		const warning = document.getElementById('tbreg-email-warning');
+		if (warning) warning.hidden = status.value !== 'published' || fields.some(field => !field.archived && field.role === 'email');
+		const capacity = form.elements.namedItem('tbreg_settings[capacity]');
+		const progress = document.getElementById('tbreg-capacity-progress');
+		if (capacity && progress) {
+			const limit = Number.isFinite(capacity.valueAsNumber) && capacity.valueAsNumber > 0 ? capacity.valueAsNumber : 0;
+			document.getElementById('tbreg-capacity-summary').textContent = limit ? String(limit) : '∞';
+			progress.hidden = !limit; progress.max = limit || 1; progress.value = Math.min(Number(progress.dataset.count), limit || 1);
+		}
+		for (const key of ['opens', 'closes']) {
+			const input = form.elements.namedItem('tbreg_settings[' + key + '_at]');
+			const output = document.getElementById('tbreg-' + key + '-summary');
+			if (input && output) output.textContent = input.value ? input.value.replace('T', ' ').slice(0, 16) : labels.noDate;
+		}
+	};
 	const newKey = () => {
 		const bytes = new Uint8Array(8);
 		window.crypto.getRandomValues(bytes);
@@ -74,13 +105,19 @@
 		hidden.value = JSON.stringify(fields);
 		if (dirty) {
 			changed = true;
-			document.getElementById('tbreg-builder-status').textContent = labels.changed;
+			showSaveStatus(labels.changed);
 		}
+		updatePublishSummary();
 	};
 	form.addEventListener('input', () => sync());
 	form.addEventListener('change', () => sync());
 	window.addEventListener('beforeunload', event => {
 		if (changed) { event.preventDefault(); event.returnValue = ''; }
+	});
+	window.addEventListener('pageshow', event => {
+		if (!event.persisted) return;
+		submitting = false; changed = true; showSaveStatus(labels.changed);
+		saveButtons.forEach(button => { button.disabled = false; });
 	});
 	const activateTab = name => {
 		form.querySelectorAll('[role="tab"]').forEach(tab => {
@@ -91,6 +128,20 @@
 		});
 	};
 	const tabs = Array.from(form.querySelectorAll('[role="tab"]'));
+	form.querySelectorAll('[data-tbreg-settings-link]').forEach(link => link.addEventListener('click', event => {
+		event.preventDefault(); activateTab('settings'); document.getElementById('tbreg-capacity').focus();
+	}));
+	document.addEventListener('keydown', event => {
+		if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
+		event.preventDefault();
+		if (event.repeat || submitting) return;
+		if (form.requestSubmit) form.requestSubmit(saveButtons[0]); else saveButtons[0].click();
+	});
+	// La validación nativa debe mostrar también los controles de pestañas ocultas.
+	form.addEventListener('invalid', event => {
+		const panel = event.target.closest('[role="tabpanel"]');
+		if (panel) activateTab(panel.id.replace('tbreg-panel-', ''));
+	}, true);
 	tabs.forEach((tab, index) => {
 		tab.addEventListener('click', () => activateTab(tab.dataset.tab));
 		tab.addEventListener('keydown', event => {
@@ -333,6 +384,7 @@
 		});
 	};
 	form.addEventListener('submit', event => {
+		if (submitting) { event.preventDefault(); return; }
 		sync(false);
 		const invalid = invalidField();
 		const error = document.getElementById('tbreg-builder-error');
@@ -340,8 +392,16 @@
 			event.preventDefault(); error.hidden = false; error.querySelector('p').textContent = labels.invalid;
 			activateTab('fields'); render(invalid.key); error.scrollIntoView({ block: 'nearest' }); return;
 		}
-		error.hidden = true; changed = false;
+		error.hidden = true;
+		// Espera a otros validadores antes de quitar la protección al salir.
+		queueMicrotask(() => {
+			if (event.defaultPrevented) return;
+			changed = false; submitting = true; showSaveStatus(labels.saving);
+			saveButtons.forEach(button => { button.disabled = true; });
+		});
 	});
 	fields.forEach(normalize);
 	render();
+	showSaveStatus(savedStatus);
+	updatePublishSummary();
 }());

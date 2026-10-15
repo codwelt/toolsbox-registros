@@ -1,0 +1,4 @@
+.tbreg-preview-page { margin: 0; padding: 24px; background: #f0f0f1; color: #1d2327; font: 16px/1.5 system-ui, sans-serif; }
+.tbreg-preview-page main { max-width: 900px; margin: auto; padding: 24px; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; }
+.tbreg-preview-notice { border-left: 4px solid #2271b1; padding: 12px; background: #f0f6fc; }
+@media (max-width: 600px) { .tbreg-preview-page { padding: 12px; } .tbreg-preview-page main { padding: 16px; } }

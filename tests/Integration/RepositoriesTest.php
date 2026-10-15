@@ -12,6 +12,7 @@ namespace Codwelt\ToolsBoxRegistros\Tests\Integration;
 use Codwelt\ToolsBoxRegistros\Domain\Form;
 use Codwelt\ToolsBoxRegistros\Domain\Field;
 use Codwelt\ToolsBoxRegistros\Admin\FormEditorPage;
+use Codwelt\ToolsBoxRegistros\Admin\FormPreviewPage;
 use Codwelt\ToolsBoxRegistros\Admin\FormsListTable;
 use Codwelt\ToolsBoxRegistros\Admin\Menu;
 use Codwelt\ToolsBoxRegistros\Admin\Templates;
@@ -328,7 +329,10 @@ final class RepositoriesTest extends TestCase {
 		$this->assertStringContainsString( 'name="tbreg_nonce"', $html );
 		$this->assertStringContainsString( 'name="tbreg_fields"', $html );
 		$this->assertSame( count( Field::TYPES ), substr_count( $html, 'class="button tbreg-add-field"' ) );
-		$this->assertSame( 4, substr_count( $html, 'role="tabpanel"' ) );
+		$this->assertSame( 3, substr_count( $html, 'role="tabpanel"' ) );
+		$this->assertSame( 1, substr_count( $html, 'name="tbreg_status"' ) );
+		$this->assertStringNotContainsString( 'tbreg-panel-publish', $html );
+		$this->assertStringContainsString( 'tbreg-publish postbox', $html );
 		$this->assertStringContainsString( 'Guarda el formulario para obtener su shortcode.', $html );
 		$this->assertStringNotContainsString( 'data-tbreg-copy-target', $html );
 		$directory = getenv( 'TBREG_EDITOR_FIXTURE_DIR' );
@@ -378,6 +382,42 @@ final class RepositoriesTest extends TestCase {
 		} finally {
 			remove_filter( 'user_has_cap', $deny, 99 );
 		}
+	}
+
+	public function test_preview_requires_capability_matching_nonce_get_and_existing_form(): void {
+		$form = $this->form(); $other = $this->form();
+		$page = new FormPreviewPage( $this->forms );
+		$valid = array( 'id' => (string) $form->id(), '_wpnonce' => wp_create_nonce( 'tbreg_preview_form_' . $form->id() ) );
+		foreach ( array( array(), array( 'id' => array( 1 ), '_wpnonce' => 'bad' ), array_merge( $valid, array( '_wpnonce' => 'bad' ) ), array_merge( $valid, array( 'id' => (string) $other->id() ) ) ) as $request ) {
+			$result = $page->document( $request ); $this->assertInstanceOf( \WP_Error::class, $result ); $this->assertSame( 403, $result->get_error_data()['status'] );
+		}
+		$this->assertSame( 405, $page->document( $valid, 'POST' )->get_error_data()['status'] );
+		$user = get_current_user_id(); wp_set_current_user( 0 );
+		$this->assertSame( 403, $page->document( $valid )->get_error_data()['status'] ); wp_set_current_user( $user );
+		$this->forms->trash( $form->id() );
+		$this->assertSame( 404, $page->document( $valid )->get_error_data()['status'] );
+		$id = $other->id() + 100;
+		$this->assertSame( 404, $page->document( array( 'id' => (string) $id, '_wpnonce' => wp_create_nonce( 'tbreg_preview_form_' . $id ) ) )->get_error_data()['status'] );
+	}
+
+	public function test_preview_renders_saved_draft_and_closed_forms_without_submission_credentials(): void {
+		$form = $this->form( array( 'capacity' => 2, 'opens_at' => '2030-10-01 08:00:00' ) );
+		$this->entry( $form );
+		$page = new FormPreviewPage( $this->forms );
+		$request = array( 'id' => (string) $form->id(), '_wpnonce' => wp_create_nonce( 'tbreg_preview_form_' . $form->id() ), 'tbreg_title' => 'Título sin guardar ignorado' );
+		foreach ( array( 'draft', 'closed' ) as $status ) {
+			$data = $this->forms->find( $form->id() )->toArray(); $data['status'] = $status;
+			$this->forms->save( Form::fromArray( $data ) );
+			$html = $page->document( $request );
+			$this->assertIsString( $html );
+			$this->assertStringContainsString( 'data-preview="true"', $html );
+			$this->assertStringContainsString( '<button type="submit"  disabled=', $html );
+			$this->assertStringContainsString( 'Seminario Bogotá', $html );
+			$this->assertStringNotContainsString( 'Título sin guardar ignorado', $html );
+			$this->assertStringNotContainsString( 'name="tbreg_token"', $html );
+			$this->assertStringNotContainsString( 'name="tbreg_ts"', $html );
+		}
+		$this->assertSame( 1, $this->entries->count( array( 'form_id' => $form->id() ) ) );
 	}
 
 	public static function tearDownAfterClass(): void {

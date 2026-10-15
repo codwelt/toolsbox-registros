@@ -86,6 +86,7 @@ final class Menu {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
 		add_action( 'admin_post_tbreg_save_form', array( $this->editor, 'handle_save' ) );
+		add_action( 'admin_post_tbreg_preview_form', array( new FormPreviewPage( $this->forms ), 'handle' ) );
 		add_action( 'admin_post_tbreg_form_action', array( $this, 'handle_action' ) );
 		add_action( 'admin_post_tbreg_entries_action', array( $this->entries_page, 'handle_action' ) );
 		add_action( 'admin_post_tbreg_export_entries', array( $this->export_page, 'handle_download' ) );
@@ -334,7 +335,9 @@ final class Menu {
 			'optionWarning'   => __( 'Cambiar un valor guardado no modifica las inscripciones anteriores. Conserva los valores para mantener su correspondencia.', 'toolsbox-registros' ),
 			'templateWarning' => __( 'La plantilla reemplazará los campos activos. Los campos con datos se archivarán. ¿Continuar?', 'toolsbox-registros' ),
 			'invalid'         => __( 'Revisa las etiquetas, claves, roles y opciones: no pueden estar vacíos ni repetir valores. Comprueba también los valores predeterminados y los límites.', 'toolsbox-registros' ),
-			'changed'         => __( 'Cambios pendientes de guardar.', 'toolsbox-registros' ),
+			'changed'         => __( 'Cambios sin guardar.', 'toolsbox-registros' ),
+			'saving'          => __( 'Guardando formulario…', 'toolsbox-registros' ),
+			'noDate'          => __( 'Sin fecha', 'toolsbox-registros' ),
 			'copied'          => __( 'Shortcode copiado.', 'toolsbox-registros' ),
 			'copyManual'      => __( 'Selecciona el shortcode y cópialo con el teclado.', 'toolsbox-registros' ),
 			'slugAutomatic'   => __( 'Se genera al guardar', 'toolsbox-registros' ),

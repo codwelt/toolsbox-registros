@@ -286,7 +286,7 @@ final class FormEditorPage {
 			);
 		}
 		?>
-		<div class="wrap tbreg-admin">
+		<div class="wrap tbreg-admin tbreg-form-editor">
 			<div class="tbreg-editor-heading">
 				<h1><?php echo esc_html( $data['id'] > 0 ? __( 'Editar formulario', 'toolsbox-registros' ) : __( 'Crear formulario', 'toolsbox-registros' ) ); ?></h1>
 				<span id="tbreg-form-status" class="tbreg-status-badge" data-status="<?php echo esc_attr( $data['status'] ); ?>"><?php echo esc_html( FormsListTable::form_statuses()[ $data['status'] ] ); ?></span>
@@ -312,6 +312,9 @@ final class FormEditorPage {
 				<input type="hidden" name="tbreg_revision" value="<?php echo esc_attr( $context['revision'] ); ?>">
 				<input type="hidden" id="tbreg-fields-json" name="tbreg_fields" value="<?php echo esc_attr( (string) wp_json_encode( $data['fields'] ) ); ?>">
 				<?php wp_nonce_field( 'tbreg_save_form', 'tbreg_nonce' ); ?>
+				<div class="tbreg-editor-layout">
+				<?php $this->publish_panel( $data, $links['entries'] ); ?>
+				<div class="tbreg-editor-main">
 				<label class="tbreg-title-label" for="tbreg-title"><?php esc_html_e( 'Nombre del formulario', 'toolsbox-registros' ); ?></label>
 				<input id="tbreg-title" name="tbreg_title" type="text" class="large-text tbreg-title" maxlength="200" value="<?php echo esc_attr( $data['title'] ); ?>" required>
 				<div class="tbreg-embed-info">
@@ -339,7 +342,6 @@ final class FormEditorPage {
 						'fields'        => __( 'Campos', 'toolsbox-registros' ),
 						'settings'      => __( 'Configuración', 'toolsbox-registros' ),
 						'notifications' => __( 'Notificaciones', 'toolsbox-registros' ),
-						'publish'       => __( 'Publicar', 'toolsbox-registros' ),
 					) as $key => $label ) :
 						?>
 						<button type="button" role="tab" id="tbreg-tab-<?php echo esc_attr( $key ); ?>" aria-controls="tbreg-panel-<?php echo esc_attr( $key ); ?>" aria-selected="<?php echo 'fields' === $key ? 'true' : 'false'; ?>" tabindex="<?php echo 'fields' === $key ? '0' : '-1'; ?>" data-tab="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></button>
@@ -390,7 +392,7 @@ final class FormEditorPage {
 							'hibrido'    => __( 'Híbrido', 'toolsbox-registros' ),
 						)
 					);
-					$this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo (0 = ilimitado)', 'toolsbox-registros' ), (string) $settings['capacity'], 'number' );
+					$this->control( 'tbreg_settings[capacity]', __( 'Cupo máximo (0 = ilimitado)', 'toolsbox-registros' ), (string) $settings['capacity'], 'number', 'tbreg-capacity' );
 					$this->control( 'tbreg_settings[opens_at]', __( 'Apertura de inscripciones', 'toolsbox-registros' ), $settings['opens_at'], 'datetime-local' );
 					$this->control( 'tbreg_settings[closes_at]', __( 'Cierre de inscripciones', 'toolsbox-registros' ), $settings['closes_at'], 'datetime-local' );
 					$this->select_control(
@@ -438,14 +440,69 @@ final class FormEditorPage {
 					?>
 					<p class="description tbreg-full"><?php esc_html_e( 'Puedes usar {field:KEY}, {event_name} y {entry_id}. El envío de correos estará disponible en una próxima actualización.', 'toolsbox-registros' ); ?></p>
 				</section>
-				<section id="tbreg-panel-publish" role="tabpanel" aria-labelledby="tbreg-tab-publish" class="tbreg-panel tbreg-settings-grid" hidden>
-					<?php
-					$this->select_control( 'tbreg_status', __( 'Estado del formulario', 'toolsbox-registros' ), $data['status'], FormsListTable::form_statuses() );
-					?>
-				</section>
-				<div class="tbreg-save-bar"><button type="submit" class="button button-primary button-large"><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span id="tbreg-builder-status" role="status" aria-live="polite"></span></div>
+				</div>
+				</div>
+				<div class="tbreg-mobile-savebar"><button type="submit" class="button button-primary" data-tbreg-save><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button><span data-tbreg-save-status aria-hidden="true"></span></div>
 			</form>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Panel compartido por todas las pestañas, con controles POST únicos.
+	 *
+	 * @param array<string,mixed> $data Formulario guardado.
+	 * @param string              $entries_url Listado filtrado autorizado.
+	 * @return void
+	 */
+	private function publish_panel( array $data, string $entries_url ): void {
+		$settings = $data['settings'];
+		$statuses = FormsListTable::form_statuses();
+		if ( 'trash' !== $data['status'] ) {
+			unset( $statuses['trash'] );
+		}
+		$updated = '' !== $data['updated_at'] ? strtotime( $data['updated_at'] . ' UTC' ) : false;
+		$status  = $updated ? sprintf( /* translators: %s: Tiempo transcurrido desde el último guardado. */ __( 'Guardado hace %s', 'toolsbox-registros' ), human_time_diff( $updated ) ) : __( 'Sin guardar', 'toolsbox-registros' );
+		$preview = wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => 'tbreg_preview_form',
+					'id'     => $data['id'],
+				),
+				admin_url( 'admin-post.php' )
+			),
+			'tbreg_preview_form_' . $data['id']
+		);
+		?>
+		<aside class="tbreg-publish postbox" aria-labelledby="tbreg-publish-title">
+			<h2 id="tbreg-publish-title"><?php esc_html_e( 'Publicar', 'toolsbox-registros' ); ?></h2>
+			<?php $this->select_control( 'tbreg_status', __( 'Estado del formulario', 'toolsbox-registros' ), $data['status'], $statuses ); ?>
+			<p id="tbreg-email-warning" class="tbreg-warning" role="status" hidden><?php esc_html_e( 'No hay un campo con el rol Correo principal. Puedes publicar, pero no se podrá identificar el correo del inscrito.', 'toolsbox-registros' ); ?></p>
+			<details class="tbreg-publish-details" open>
+				<summary><?php esc_html_e( 'Cupos, fechas y vista previa', 'toolsbox-registros' ); ?></summary>
+				<p><strong><?php esc_html_e( 'Inscritos / cupo:', 'toolsbox-registros' ); ?></strong>
+				<?php if ( $data['id'] > 0 && current_user_can( 'tbreg_view_entries' ) ) : ?>
+					<a href="<?php echo esc_url( $entries_url ); ?>"><?php echo esc_html( number_format_i18n( $data['entries_count'] ) ); ?></a>
+				<?php else : ?>
+					<?php echo esc_html( number_format_i18n( $data['entries_count'] ) ); ?>
+				<?php endif; ?>
+				/ <span id="tbreg-capacity-summary"><?php echo esc_html( $settings['capacity'] > 0 ? number_format_i18n( $settings['capacity'] ) : '∞' ); ?></span></p>
+				<progress id="tbreg-capacity-progress" aria-label="<?php esc_attr_e( 'Ocupación del cupo', 'toolsbox-registros' ); ?>" data-count="<?php echo esc_attr( (string) $data['entries_count'] ); ?>" max="<?php echo esc_attr( (string) max( 1, $settings['capacity'] ) ); ?>" value="<?php echo esc_attr( (string) min( $data['entries_count'], max( 1, $settings['capacity'] ) ) ); ?>" <?php echo $settings['capacity'] > 0 ? '' : 'hidden'; ?>></progress>
+				<p class="description"><?php esc_html_e( 'El contador incluye las inscripciones que ocupan cupo.', 'toolsbox-registros' ); ?></p>
+				<p><strong><?php esc_html_e( 'Abre:', 'toolsbox-registros' ); ?></strong> <span id="tbreg-opens-summary"><?php echo esc_html( '' !== $settings['opens_at'] ? substr( str_replace( 'T', ' ', $settings['opens_at'] ), 0, 16 ) : __( 'Sin fecha', 'toolsbox-registros' ) ); ?></span><br>
+				<strong><?php esc_html_e( 'Cierra:', 'toolsbox-registros' ); ?></strong> <span id="tbreg-closes-summary"><?php echo esc_html( '' !== $settings['closes_at'] ? substr( str_replace( 'T', ' ', $settings['closes_at'] ), 0, 16 ) : __( 'Sin fecha', 'toolsbox-registros' ) ); ?></span></p>
+				<p class="description"><?php echo esc_html( sprintf( /* translators: %s: Zona horaria del sitio. */ __( 'Hora del sitio: %s.', 'toolsbox-registros' ), wp_timezone_string() ) ); ?> <a href="#tbreg-capacity" data-tbreg-settings-link><?php esc_html_e( 'Cambiar', 'toolsbox-registros' ); ?></a></p>
+				<?php if ( $data['id'] > 0 ) : ?>
+					<a class="button" id="tbreg-preview-link" target="_blank" rel="noopener noreferrer" href="<?php echo esc_url( $preview ); ?>"><?php esc_html_e( 'Vista previa', 'toolsbox-registros' ); ?><span class="screen-reader-text"> <?php esc_html_e( '(abre una pestaña nueva)', 'toolsbox-registros' ); ?></span></a>
+					<p class="description"><?php esc_html_e( 'Muestra la última versión guardada, sin enviar inscripciones.', 'toolsbox-registros' ); ?></p>
+				<?php else : ?>
+					<p class="description"><?php esc_html_e( 'Guarda el formulario para ver la vista previa.', 'toolsbox-registros' ); ?></p>
+				<?php endif; ?>
+			</details>
+			<p id="tbreg-builder-status" role="status" aria-live="polite" aria-atomic="true"><?php echo esc_html( $status ); ?></p>
+			<button type="submit" class="button button-primary button-large" data-tbreg-save><?php esc_html_e( 'Guardar formulario', 'toolsbox-registros' ); ?></button>
+			<span class="tbreg-save-shortcut" aria-hidden="true">Ctrl / ⌘ + S</span>
+		</aside>
 		<?php
 	}
 
@@ -456,15 +513,16 @@ final class FormEditorPage {
 	 * @param string $label Etiqueta visible.
 	 * @param string $value Valor guardado.
 	 * @param string $type Tipo de control.
+	 * @param string $id Identificador opcional para enlaces y foco.
 	 * @return void
 	 */
-	private function control( string $name, string $label, string $value, string $type = 'text' ): void {
+	private function control( string $name, string $label, string $value, string $type = 'text', string $id = '' ): void {
 		echo '<label class="tbreg-control"><span>' . esc_html( $label ) . '</span>';
 		if ( 'textarea' === $type ) {
 			echo '<textarea name="' . esc_attr( $name ) . '" rows="4">' . esc_textarea( $value ) . '</textarea>';
 		} else {
 			$value = 'datetime-local' === $type ? str_replace( ' ', 'T', $value ) : $value;
-			echo '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '"' . ( 'number' === $type ? ' min="0" step="1"' : '' ) . '>';
+			echo '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '"' . ( '' !== $id ? ' id="' . esc_attr( $id ) . '"' : '' ) . ( 'number' === $type ? ' min="0" step="1"' : '' ) . '>';
 		}
 		echo '</label>';
 	}

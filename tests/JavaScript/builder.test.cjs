@@ -43,6 +43,59 @@ function setup(fields = [], used = [], markup = html) {
 	return { dom, w, d, state, click, input, submit };
 }
 const textField = { key: 'f_existing', type: 'text', label: 'Nombre', options: [], width: 'full', role: null, required: false, archived: false, default: '', validation: {} };
+test('Publicar está fuera de las tres pestañas y el aviso de correo no bloquea', () => {
+	const { dom, w, d, state, input } = setup([textField]);
+	assert.equal(d.querySelectorAll('[role="tab"]').length, 3);
+	const status = d.querySelector('[name="tbreg_status"]');
+	assert.equal(d.querySelectorAll('[name="tbreg_status"]').length, 1);
+	for (const tab of d.querySelectorAll('[role="tab"]')) { tab.click(); assert.equal(status.closest('[hidden]'), null); }
+	status.value = 'published'; status.dispatchEvent(new w.Event('change', { bubbles: true }));
+	assert.equal(d.getElementById('tbreg-email-warning').hidden, false);
+	d.querySelector('[data-type="email"]').click();
+	input(d.querySelector('.tbreg-field:last-child'), 'role', 'email');
+	assert.ok(state().some(field => field.role === 'email'));
+	assert.equal(d.getElementById('tbreg-email-warning').hidden, true);
+	assert.equal(status.disabled, false); dom.window.close();
+});
+test('Cambiar enfoca Configuración y cupos/fechas conservan la hora local escrita', () => {
+	const { dom, w, d } = setup();
+	d.querySelector('[data-tbreg-settings-link]').click();
+	assert.equal(d.activeElement.id, 'tbreg-capacity'); assert.equal(d.getElementById('tbreg-panel-settings').hidden, false);
+	const progress = d.getElementById('tbreg-capacity-progress'); progress.dataset.count = '2';
+	const capacity = d.getElementById('tbreg-capacity'); capacity.value = '3'; capacity.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(progress.hidden, false); assert.equal(progress.max, 3); assert.equal(progress.value, 2);
+	capacity.value = '0'; capacity.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(progress.hidden, true); assert.equal(d.getElementById('tbreg-capacity-summary').textContent, '∞');
+	const opens = d.querySelector('[name="tbreg_settings[opens_at]"]'); opens.value = '2026-11-01T08:30'; opens.dispatchEvent(new w.Event('input', { bubbles: true }));
+	assert.equal(d.getElementById('tbreg-opens-summary').textContent, '2026-11-01 08:30'); dom.window.close();
+});
+test('cambios sin guardar se anuncian, protegen la salida y se conservan si se cancela el envío', async () => {
+	const { dom, w, d, input } = setup([textField]); const form = d.getElementById('tbreg-editor');
+	const unload = () => { const event = new w.Event('beforeunload', { cancelable: true }); w.dispatchEvent(event); return event.defaultPrevented; };
+	assert.equal(unload(), false);
+	input(d.querySelector('.tbreg-field'), 'label', 'Nombre completo');
+	assert.equal(unload(), true); assert.equal(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.changed);
+	assert.equal(d.querySelector('[data-tbreg-save-status]').textContent, w.tbreg_builder.labels.changed);
+	form.addEventListener('submit', event => event.preventDefault(), { once: true });
+	form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); await new Promise(setImmediate);
+	assert.equal(unload(), true); assert.equal(d.querySelector('[data-tbreg-save]').disabled, false);
+	form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); await new Promise(setImmediate);
+	assert.equal(unload(), false); assert.equal(d.getElementById('tbreg-builder-status').textContent, w.tbreg_builder.labels.saving);
+	assert.equal(d.querySelector('[data-tbreg-save]').disabled, true);
+	const restored = new w.Event('pageshow'); Object.defineProperty(restored, 'persisted', { value: true }); w.dispatchEvent(restored);
+	assert.equal(unload(), true); assert.equal(d.querySelector('[data-tbreg-save]').disabled, false); dom.window.close();
+});
+test('Ctrl/Cmd+S usa el guardado con validación y no el diálogo del navegador', () => {
+	const { dom, w, d } = setup([textField]); const form = d.getElementById('tbreg-editor'); let calls = 0;
+	form.requestSubmit = button => { calls++; assert.equal(button, d.querySelector('[data-tbreg-save]')); };
+	for (const modifier of ['ctrlKey', 'metaKey']) {
+		const event = new w.KeyboardEvent('keydown', { key: 's', [modifier]: true, bubbles: true, cancelable: true }); d.dispatchEvent(event); assert.equal(event.defaultPrevented, true);
+	}
+	d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 's', ctrlKey: true, repeat: true, bubbles: true, cancelable: true }));
+	assert.equal(calls, 2);
+	const capacity = d.getElementById('tbreg-capacity'); capacity.dispatchEvent(new w.Event('invalid', { cancelable: true }));
+	assert.equal(d.getElementById('tbreg-panel-settings').hidden, false); dom.window.close();
+});
 test('shortcode permanece fuera de las pestañas y copia su valor sin enviar el formulario', async () => {
 	const saved = fs.readFileSync(path.join(fixtureDir, 'editor-saved.html'), 'utf8');
 	const { dom, w, d } = setup([], [], saved);
@@ -170,7 +223,7 @@ test('opciones repetidas bloquean envío y enfocan el campo', () => {
 	input(d.querySelector('.tbreg-option'), 'label', 'Bogotá');
 	click(d.querySelector('.tbreg-field'), 'addOption');
 	input(d.querySelector('.tbreg-option:last-child'), 'label', 'Bogotá');
-	d.querySelector('[data-tab="publish"]').click();
+	d.querySelector('[data-tab="settings"]').click();
 	assert.equal(submit(), false);
 	assert.equal(d.getElementById('tbreg-builder-error').hidden, false);
 	assert.equal(d.getElementById('tbreg-panel-fields').hidden, false);
@@ -198,8 +251,8 @@ test('contenido del campo usa texto y no ejecuta HTML', () => {
 test('pestañas admiten flechas, Inicio y Fin', () => {
 	const { dom, w, d } = setup();
 	d.querySelector('[data-tab="fields"]').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
-	assert.equal(d.activeElement.dataset.tab, 'publish');
-	assert.equal(d.getElementById('tbreg-panel-publish').hidden, false);
+	assert.equal(d.activeElement.dataset.tab, 'notifications');
+	assert.equal(d.getElementById('tbreg-panel-notifications').hidden, false);
 	d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
 	assert.equal(d.activeElement.dataset.tab, 'fields');
 	dom.window.close();

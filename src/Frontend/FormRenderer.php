@@ -186,7 +186,7 @@ final class FormRenderer {
 				'fields_html' => $fields_html,
 				'summary'     => $summary,
 				'message'     => $feedback['message'] ?? '',
-				'token'       => ( new SpamGuard() )->issue( $form->id() ),
+				'token'       => $preview ? array() : ( new SpamGuard() )->issue( $form->id() ),
 				'return_url'  => self::current_url(),
 				'captcha'     => $provider,
 				'site_key'    => $captcha['site_key'],
