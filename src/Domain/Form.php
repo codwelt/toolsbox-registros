@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Codwelt\ToolsBoxRegistros\Domain;
 
+use Codwelt\ToolsBoxRegistros\Export\PdfDesign;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -232,6 +234,7 @@ final class Form {
 				$result[ $name ][ $attribute ] = 'body' === $attribute ? wp_kses_post( $value ) : sanitize_text_field( $value );
 			}
 		}
+		$result['pdf'] = PdfDesign::normalize( $settings['pdf'] ?? array() );
 		return $result;
 	}
 

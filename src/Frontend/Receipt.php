@@ -47,7 +47,8 @@ final class Receipt {
 	 */
 	public function register(): void {
 		add_action( 'admin_post_tbreg_receipt', array( $this, 'download' ) );
-		add_action( 'admin_post_nopriv_tbreg_receipt', array( $this, 'download' ) ); }
+		add_action( 'admin_post_nopriv_tbreg_receipt', array( $this, 'download' ) );
+		add_action( 'admin_post_tbreg_pdf_sample', array( $this, 'sample' ) ); }
 	/**
 	 * Emite acceso solo después de una inscripción confirmada en BD.
 	 *
@@ -157,10 +158,41 @@ final class Receipt {
 		$context = $this->resolve( wp_unslash( $_GET ) );
 		if ( is_wp_error( $context ) ) {
 			wp_die( esc_html( $context->get_error_message() ), '', array( 'response' => 403 ) ); }
+		$this->send( $context['form'], $context['entry'], $context['values'], 'inscripcion-' . $context['entry']['id'] . '.pdf' );
+	}
+	/**
+	 * Entrega el formato sin datos para imprimirlo o revisar el diseño guardado.
+	 *
+	 * @return void
+	 */
+	public function sample(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- El nonce se verifica abajo junto con la capacidad.
+		$id   = isset( $_GET['form_id'] ) && is_scalar( $_GET['form_id'] ) ? absint( $_GET['form_id'] ) : 0;
+		$form = $id > 0 && current_user_can( 'tbreg_manage_forms' ) && check_admin_referer( 'tbreg_pdf_sample_' . $id ) ? $this->forms->find( $id ) : null;
+		if ( null === $form ) {
+			wp_die( esc_html__( 'No tienes permiso para descargar este formato.', 'toolsbox-registros' ), '', array( 'response' => 403 ) ); }
+		$entry = array(
+			'id'         => 0,
+			'created_at' => current_time( 'mysql', true ),
+			'status'     => $form->settings()['default_status'],
+		);
+		$this->send( $form, $entry, array(), sanitize_file_name( 'formato-' . $form->get( 'slug' ) . '.pdf' ) );
+	}
+	/**
+	 * Genera y entrega PDF con cabeceras privadas, eliminando el temporal.
+	 *
+	 * @param Form                $form Esquema.
+	 * @param array<string,mixed> $entry Metadatos.
+	 * @param array<string,mixed> $values Respuestas.
+	 * @param string              $filename Nombre del archivo.
+	 * @throws \RuntimeException Si falla el archivo temporal.
+	 * @return void
+	 */
+	private function send( Form $form, array $entry, array $values, string $filename ): void {
 		$path = '';
 		try {
 			$path = XlsxWriter::temporary();
-			$pdf  = ( new RegistrationPdf() )->build( $context['form'], $context['entry'], $context['values'] );
+			$pdf  = ( new RegistrationPdf() )->build( $form, $entry, $values );
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Temporal propio con permisos 0600, generado antes de emitir cabeceras.
 			if ( strlen( $pdf ) !== file_put_contents( $path, $pdf ) ) {
 				throw new \RuntimeException( 'tbreg_pdf_io' ); }
@@ -168,7 +200,7 @@ final class Receipt {
 				array(
 					'path'     => $path,
 					'mime'     => 'application/pdf',
-					'filename' => 'inscripcion-' . $context['entry']['id'] . '.pdf',
+					'filename' => $filename,
 				)
 			);
 		} catch ( \Throwable $exception ) {

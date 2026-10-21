@@ -3,7 +3,7 @@
  * Plugin Name: ToolsBox Registros
  * Plugin URI:  https://codwelt.com/toolsbox-herramientas-digitales-gratis/
  * Description: Crea formularios dinámicos de inscripción para clases, eventos y seminarios, y exporta los inscritos a Excel.
- * Version:     0.3.9
+ * Version:     0.4.1
  * Author:      Codwelt SAS
  * Author URI:  https://codwelt.com/
  * Text Domain: toolsbox-registros
@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TBREG_VERSION', '0.3.9' );
+define( 'TBREG_VERSION', '0.4.1' );
 define( 'TBREG_FILE', __FILE__ );
 define( 'TBREG_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TBREG_URL', plugin_dir_url( __FILE__ ) );

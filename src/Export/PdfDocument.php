@@ -25,9 +25,9 @@ final class PdfDocument {
 	 */
 	private array $pages = array();
 	/**
-	 * Imágenes JPEG por página.
+	 * Imágenes JPEG por página, en orden de inserción.
 	 *
-	 * @var array<string>
+	 * @var array<int,array<string>>
 	 */
 	private array $photos = array();
 	/**
@@ -110,10 +110,11 @@ final class PdfDocument {
 	 * @param float  $y Distancia desde arriba.
 	 * @param float  $size Tamaño.
 	 * @param string $color Color interno RGB.
+	 * @param bool   $bold Simula negrita con trazo, pues solo se incluye una fuente.
 	 * @return void
 	 * @throws \RuntimeException Si se supera el espacio de códigos CID del PDF.
 	 */
-	public function text( string $text, float $x, float $y, float $size = 10, string $color = '0.12 0.17 0.23' ): void {
+	public function text( string $text, float $x, float $y, float $size = 10, string $color = '0.12 0.17 0.23', bool $bold = false ): void {
 		$hex = '';
 		foreach ( mb_str_split( SpreadsheetText::clean( $text ) ) as $char ) {
 			if ( ! isset( $this->characters[ $char ] ) ) {
@@ -122,8 +123,22 @@ final class PdfDocument {
 				$this->characters[ $char ] = count( $this->characters ) + 1; }
 			$hex .= sprintf( '%04X', $this->characters[ $char ] );
 		}
-		$this->pages[ $this->page ] .= sprintf( "BT /F1 %.2F Tf %s rg 1 0 0 1 %.2F %.2F Tm <%s> Tj ET\n", $size, $color, $x, 792 - $y, $hex );
+		$mode                        = $bold ? sprintf( '%s RG 2 Tr %.2F w ', $color, $size * 0.04 ) : '0 Tr ';
+		$this->pages[ $this->page ] .= sprintf( "BT /F1 %.2F Tf %s rg %s1 0 0 1 %.2F %.2F Tm <%s> Tj ET\n", $size, $color, $mode, $x, 792 - $y, $hex );
 	}
+	/**
+	 * Dibuja el contorno de un rectángulo.
+	 *
+	 * @param float  $x Izquierda.
+	 * @param float  $y Arriba.
+	 * @param float  $width Ancho.
+	 * @param float  $height Alto.
+	 * @param string $color RGB interno.
+	 * @param float  $line Grosor del trazo.
+	 * @return void
+	 */
+	public function outline( float $x, float $y, float $width, float $height, string $color, float $line = 0.75 ): void {
+		$this->pages[ $this->page ] .= sprintf( "q %s RG %.2F w %.2F %.2F %.2F %.2F re S Q\n", $color, $line, $x, 792 - $y - $height, $width, $height ); }
 	/**
 	 * Dibuja una regla o un fondo.
 	 *
@@ -147,12 +162,12 @@ final class PdfDocument {
 	 * @return void
 	 */
 	public function photo( string $jpeg, float $x, float $y, float $width, float $height ): void {
-		$info                        = getimagesizefromstring( $jpeg );
-		$scale                       = min( $width / $info[0], $height / $info[1] );
-		$width                       = $info[0] * $scale;
-		$height                      = $info[1] * $scale;
-		$this->photos[ $this->page ] = $jpeg;
-		$this->pages[ $this->page ] .= sprintf( "q %.2F 0 0 %.2F %.2F %.2F cm /Photo Do Q\n", $width, $height, $x, 792 - $y - $height );
+		$info                          = getimagesizefromstring( $jpeg );
+		$scale                         = min( $width / $info[0], $height / $info[1] );
+		$width                         = $info[0] * $scale;
+		$height                        = $info[1] * $scale;
+		$this->photos[ $this->page ][] = $jpeg;
+		$this->pages[ $this->page ]   .= sprintf( "q %.2F 0 0 %.2F %.2F %.2F cm /Im%d Do Q\n", $width, $height, $x, 792 - $y - $height, count( $this->photos[ $this->page ] ) - 1 );
 	}
 	/**
 	 * Empaqueta objetos, streams y tabla xref sin dependencias.
@@ -197,10 +212,13 @@ final class PdfDocument {
 		foreach ( $this->pages as $index => $content ) {
 			$resources = '/Font << /F1 ' . $font . ' 0 R >>';
 			if ( isset( $this->photos[ $index ] ) ) {
-				$jpeg       = $this->photos[ $index ];
-				$info       = getimagesizefromstring( $jpeg );
-				$image      = $add( $stream( $jpeg, '/Type /XObject /Subtype /Image /Width ' . $info[0] . ' /Height ' . $info[1] . ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode' ) );
-				$resources .= ' /XObject << /Photo ' . $image . ' 0 R >>';
+				$images = '';
+				foreach ( $this->photos[ $index ] as $number => $jpeg ) {
+					$info    = getimagesizefromstring( $jpeg );
+					$image   = $add( $stream( $jpeg, '/Type /XObject /Subtype /Image /Width ' . $info[0] . ' /Height ' . $info[1] . ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode' ) );
+					$images .= ' /Im' . $number . ' ' . $image . ' 0 R';
+				}
+				$resources .= ' /XObject <<' . $images . ' >>';
 			}
 			$content_id = $add( $stream( gzcompress( $content ), '/Filter /FlateDecode' ) );
 			$page_id    = $add( '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << ' . $resources . ' >> /Contents ' . $content_id . ' 0 R >>' );

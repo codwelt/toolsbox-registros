@@ -474,6 +474,23 @@ test('tarjetas y controles dependientes conservan valores ocultos en el POST', (
 	assert.equal(post.get('tbreg_settings[notify_admin][to]'), 'qa@example.test'); assert.equal(post.get('tbreg_settings[confirm_attendee][body]'), '<p>Hola {field:f_name}</p>');
 	assert.deepEqual(state(), before); dom.window.close();
 });
+test('diseño del PDF alterna sus paneles y el selector de logo actualiza el valor enviado', () => {
+	let selected = null;
+	const media = { open() { this.handler(); }, off() { return this; }, on(event, handler) { this.handler = handler; return this; }, state: () => ({ get: () => ({ first: () => ({ toJSON: () => selected }) }) }) };
+	const { dom, w, d } = setup(settingsFields, [], settingsHtml, win => { win.wp = { media: () => media }; });
+	setting(d, 'pdf_enabled').click();
+	const receipt = d.querySelector('[data-tbreg-dependent="pdf_receipt"]'); const enrollment = d.querySelector('[data-tbreg-dependent="pdf_enrollment"]');
+	assert.equal(receipt.hidden, false); assert.equal(enrollment.hidden, true);
+	setting(d, 'pdf][template').value = 'enrollment'; setting(d, 'pdf][template').dispatchEvent(new w.Event('change', { bubbles: true }));
+	assert.equal(receipt.hidden, true); assert.equal(enrollment.hidden, false);
+	selected = { id: 33, url: 'https://wordpress.test/logo.png' };
+	d.querySelector('[data-tbreg-logo="choose"]').click();
+	assert.equal(setting(d, 'pdf][logo_id').value, '33'); assert.equal(d.querySelector('.tbreg-pdf-logo img').hidden, false);
+	d.querySelector('[data-tbreg-logo="remove"]').click();
+	const post = new w.FormData(d.getElementById('tbreg-editor'));
+	assert.equal(post.get('tbreg_settings[pdf][logo_id]'), '0'); assert.equal(post.get('tbreg_settings[pdf][template]'), 'enrollment'); assert.equal(post.get('tbreg_settings[pdf][show_options]'), '1');
+	dom.window.close();
+});
 test('acción posterior conserva el borrador de URL al alternar y desactiva su validación al mostrar mensaje', () => {
 	const { dom, w, d } = setup(settingsFields, [], settingsHtml); const url = setting(d, 'redirect_url');
 	assert.equal(d.getElementById('tbreg-redirect-options').hidden, false); assert.equal(url.required, true);

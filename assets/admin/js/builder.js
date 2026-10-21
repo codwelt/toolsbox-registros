@@ -88,6 +88,8 @@
 		const visible = {
 			waitlist: Number(setting('capacity')?.value) > 0,
 			pdf: setting('pdf_enabled')?.checked,
+			pdf_receipt: form.elements.namedItem('tbreg_settings[pdf][template]')?.value !== 'enrollment',
+			pdf_enrollment: form.elements.namedItem('tbreg_settings[pdf][template]')?.value === 'enrollment',
 			message: mode !== 'redirect',
 			redirect: mode === 'redirect',
 			notify_admin: form.elements.namedItem('tbreg_settings[notify_admin][enabled]')?.checked,
@@ -145,6 +147,19 @@
 		updateSettingsUI();
 		refreshSummaries();
 	};
+	const logo = form.querySelector('.tbreg-pdf-logo');
+	if (logo) {
+		const input = logo.querySelector('input'); const preview = logo.querySelector('img'); const remove = logo.querySelector('[data-tbreg-logo="remove"]');
+		const setLogo = (id, url) => { input.value = String(id); preview.src = url || ''; preview.hidden = !url; remove.hidden = !url; input.dispatchEvent(new Event('change', { bubbles: true })); };
+		let frame = null;
+		logo.querySelector('[data-tbreg-logo="choose"]').addEventListener('click', () => {
+			if (!window.wp || !window.wp.media) return;
+			frame = frame || window.wp.media({ title: labels.logoTitle, button: { text: labels.logoButton }, library: { type: ['image/jpeg', 'image/png', 'image/webp'] }, multiple: false });
+			frame.off('select').on('select', () => { const image = frame.state().get('selection').first().toJSON(); setLogo(image.id, image.sizes?.thumbnail?.url || image.url); });
+			frame.open();
+		});
+		remove.addEventListener('click', () => setLogo(0, ''));
+	}
 	const changedControl = event => { if (!event.target.closest('[data-tbreg-ui]')) sync(); };
 	form.addEventListener('input', changedControl);
 	form.addEventListener('change', changedControl);

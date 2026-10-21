@@ -299,6 +299,9 @@ final class Menu {
 		if ( ! current_user_can( 'tbreg_manage_forms' ) ) {
 			return;
 		}
+		if ( $editing ) {
+			wp_enqueue_media();
+		}
 		wp_enqueue_script( 'tbreg-builder', TBREG_URL . 'assets/admin/js/builder.js', $editing ? array( 'jquery-ui-sortable' ) : array(), TBREG_VERSION, true );
 		$context = $editing ? $this->editor->context() : array();
 		wp_localize_script(
@@ -321,6 +324,8 @@ final class Menu {
 	 */
 	private function labels(): array {
 		return array(
+			'logoTitle'       => __( 'Logo del PDF', 'toolsbox-registros' ),
+			'logoButton'      => __( 'Usar como logo', 'toolsbox-registros' ),
 			'mergeGeneral'    => __( 'Datos de la inscripción', 'toolsbox-registros' ),
 			'mergeFields'     => __( 'Campos del formulario', 'toolsbox-registros' ),
 			'mergeEvent'      => __( 'Nombre del evento', 'toolsbox-registros' ),

@@ -284,6 +284,35 @@ final class RepositoriesTest extends TestCase {
 		}
 	}
 
+	public function test_editor_saves_pdf_design_from_html_controls(): void {
+		$form  = $this->form( array( 'pdf_enabled' => true ) );
+		$input = $this->editor_input( $form );
+		$input['tbreg_settings']['pdf'] = array( 'template' => 'enrollment', 'primary_color' => '#112233', 'accent_color' => '#445566', 'logo_id' => '0', 'title' => 'Japonés', 'subtitle' => "Formato\nPrograma", 'terms' => "## Condiciones\nTexto", 'show_options' => '1', 'signatures' => 'Firma' );
+		$editor = new FormEditorPage( $this->forms );
+		$saved  = $editor->save( $input );
+		$this->assertInstanceOf( Form::class, $saved );
+		$pdf = $saved->settings()['pdf'];
+		$this->assertSame( array( 'enrollment', '#112233', 0, true, false, "Formato\nPrograma" ), array( $pdf['template'], $pdf['primary_color'], $pdf['logo_id'], $pdf['show_options'], $pdf['photo_box'], $pdf['subtitle'] ) );
+		$input = $this->editor_input( $saved );
+		$input['tbreg_settings']['pdf']['logo_id'] = 'x';
+		$this->assertInstanceOf( \WP_Error::class, $editor->save( $input ) );
+		$_GET['id'] = (string) $saved->id(); ob_start(); $editor->render(); $html = ob_get_clean();
+		$this->assertStringContainsString( 'name="tbreg_settings[pdf][template]"', $html );
+		$this->assertStringContainsString( 'data-tbreg-dependent="pdf_enrollment"', $html );
+		$this->assertStringContainsString( 'action=tbreg_pdf_sample', $html );
+		$handler = static fn () => static function ( $message, $title, $args ): void { throw new \RuntimeException( (string) ( $args['response'] ?? 403 ) ); };
+		add_filter( 'wp_die_handler', $handler );
+		$_GET['form_id'] = (string) $saved->id(); $_REQUEST['_wpnonce'] = 'invalid';
+		try {
+			( new \Codwelt\ToolsBoxRegistros\Frontend\Receipt( $this->forms ) )->sample();
+			$this->fail( 'Se descargó el formato sin nonce válido.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( '403', $exception->getMessage() );
+		} finally {
+			remove_filter( 'wp_die_handler', $handler ); unset( $_GET['form_id'], $_REQUEST['_wpnonce'] );
+		}
+	}
+
 	public function test_editor_revision_rejects_stale_edits_but_allows_counter_updates(): void {
 		$form = $this->form();
 		$input = $this->editor_input( $form );

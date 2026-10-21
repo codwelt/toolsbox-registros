@@ -25,13 +25,17 @@ final class RegistrationPdf {
 	 * @return string
 	 */
 	public function build( Form $form, array $entry, array $values ): string {
+		$design = $form->settings()['pdf'];
+		if ( 'enrollment' === $design['template'] ) {
+			return ( new EnrollmentPdf() )->build( $form, $entry, $values ); }
+		$primary  = PdfDesign::rgb( $design['primary_color'] );
 		$pdf      = new PdfDocument();
 		$registry = new FieldTypeRegistry();
 		$page     = 0;
-		$header   = static function ( string $title ) use ( $pdf, $form, $entry, &$page ): void {
+		$header   = static function ( string $title ) use ( $pdf, $form, $entry, $primary, &$page ): void {
 			$pdf->page();
 			++$page;
-			$pdf->rectangle( 0, 0, 612, 100, '0.07 0.23 0.36' );
+			$pdf->rectangle( 0, 0, 612, 100, $primary );
 			foreach ( $pdf->wrap( wp_strip_all_tags( get_bloginfo( 'name' ) ), 520, 12 ) as $i => $line ) {
 				if ( $i < 2 ) {
 					$pdf->text( $line, 46, 30 + $i * 15, 12, '1 1 1' ); }

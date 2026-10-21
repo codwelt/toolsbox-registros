@@ -171,6 +171,23 @@ final class FormEditorPage {
 			}
 			$raw[ $name ] = '1' === $value || true === $value;
 		}
+		if ( isset( $raw['pdf'] ) ) {
+			if ( ! is_array( $raw['pdf'] ) ) {
+				throw new \InvalidArgumentException( esc_html__( 'El diseño del PDF no es válido.', 'toolsbox-registros' ) );
+			}
+			foreach ( array( 'show_options', 'photo_box' ) as $name ) {
+				$value = $raw['pdf'][ $name ] ?? '0';
+				if ( ! in_array( $value, array( '0', '1', false, true ), true ) ) {
+					throw new \InvalidArgumentException( esc_html__( 'Una opción del diseño del PDF no es válida.', 'toolsbox-registros' ) );
+				}
+				$raw['pdf'][ $name ] = '1' === $value || true === $value;
+			}
+			$logo = filter_var( $raw['pdf']['logo_id'] ?? '0', FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 0 ) ) );
+			if ( false === $logo ) {
+				throw new \InvalidArgumentException( esc_html__( 'El logo del PDF no es válido.', 'toolsbox-registros' ) );
+			}
+			$raw['pdf']['logo_id'] = $logo;
+		}
 		$capacity = filter_var(
 			$raw['capacity'] ?? '0',
 			FILTER_VALIDATE_INT,
@@ -493,7 +510,61 @@ final class FormEditorPage {
 				<p class="description"><?php esc_html_e( 'Ofrece un comprobante descargable al completar la inscripción.', 'toolsbox-registros' ); ?></p>
 				<?php $this->checkbox_control( 'tbreg_settings[pdf_enabled]', __( 'Ofrecer PDF al inscrito', 'toolsbox-registros' ), $settings['pdf_enabled'], 'tbreg-pdf-options' ); ?>
 				<div id="tbreg-pdf-options" data-tbreg-dependent="pdf">
-					<?php $this->control( 'tbreg_settings[receipt_text]', __( 'Texto de la segunda página del PDF', 'toolsbox-registros' ), $settings['receipt_text'], 'textarea' ); ?>
+					<?php
+					$design = $settings['pdf'];
+					$this->select_control(
+						'tbreg_settings[pdf][template]',
+						__( 'Diseño del PDF', 'toolsbox-registros' ),
+						$design['template'],
+						array(
+							'receipt'    => __( 'Constancia de inscripción', 'toolsbox-registros' ),
+							'enrollment' => __( 'Formato de inscripción y matrícula', 'toolsbox-registros' ),
+						)
+					);
+					?>
+					<div class="tbreg-pdf-colors">
+						<?php
+						$this->control( 'tbreg_settings[pdf][primary_color]', __( 'Color principal', 'toolsbox-registros' ), $design['primary_color'], 'color' );
+						$this->control( 'tbreg_settings[pdf][accent_color]', __( 'Color de los títulos de sección', 'toolsbox-registros' ), $design['accent_color'], 'color' );
+						?>
+					</div>
+					<div data-tbreg-dependent="pdf_receipt"><?php $this->control( 'tbreg_settings[receipt_text]', __( 'Texto de la segunda página del PDF', 'toolsbox-registros' ), $settings['receipt_text'], 'textarea' ); ?></div>
+					<div data-tbreg-dependent="pdf_enrollment">
+						<?php $this->logo_control( $design['logo_id'] ); ?>
+						<?php
+						$this->control( 'tbreg_settings[pdf][title]', __( 'Título de la banda superior (vacío: nombre del sitio)', 'toolsbox-registros' ), $design['title'] );
+						$this->control( 'tbreg_settings[pdf][subtitle]', __( 'Subtítulo, una línea por renglón (vacío: «Formato de inscripción y matrícula» y el nombre del formulario)', 'toolsbox-registros' ), $design['subtitle'], 'textarea' );
+						$this->checkbox_control( 'tbreg_settings[pdf][show_options]', __( 'Mostrar todas las opciones con casillas, marcando las elegidas', 'toolsbox-registros' ), $design['show_options'] );
+						$this->checkbox_control( 'tbreg_settings[pdf][photo_box]', __( 'Incluir recuadro para la foto', 'toolsbox-registros' ), $design['photo_box'] );
+						$this->control( 'tbreg_settings[pdf][office_fields]', __( 'Espacio de uso exclusivo de la institución (un dato por línea)', 'toolsbox-registros' ), $design['office_fields'], 'textarea' );
+						$this->control( 'tbreg_settings[pdf][intro]', __( 'Texto introductorio', 'toolsbox-registros' ), $design['intro'], 'textarea' );
+						$this->control( 'tbreg_settings[pdf][terms]', __( 'Condiciones', 'toolsbox-registros' ), $design['terms'], 'textarea' );
+						?>
+						<p class="description"><?php esc_html_e( 'Empieza una línea con «## » para crear un título de sección. Encierra una línea entre ** para resaltarla en negrita.', 'toolsbox-registros' ); ?></p>
+						<?php
+						$this->control( 'tbreg_settings[pdf][signatures]', __( 'Firmas (una por línea)', 'toolsbox-registros' ), $design['signatures'], 'textarea' );
+						$this->control( 'tbreg_settings[pdf][footer]', __( 'Pie de página', 'toolsbox-registros' ), $design['footer'] );
+						?>
+					</div>
+					<?php if ( $data['id'] > 0 ) : ?>
+						<p><a class="button" href="
+						<?php
+						echo esc_url(
+							wp_nonce_url(
+								add_query_arg(
+									array(
+										'action'  => 'tbreg_pdf_sample',
+										'form_id' => $data['id'],
+									),
+									admin_url( 'admin-post.php' )
+								),
+								'tbreg_pdf_sample_' . $data['id']
+							)
+						);
+						?>
+													"><?php esc_html_e( 'Descargar formato en blanco', 'toolsbox-registros' ); ?></a></p>
+						<p class="description"><?php esc_html_e( 'La descarga usa el diseño guardado: guarda los cambios antes de descargar.', 'toolsbox-registros' ); ?></p>
+					<?php endif; ?>
 					<p class="description"><?php esc_html_e( 'Con el PDF activado se muestra el comprobante con su enlace de descarga, en lugar de redirigir automáticamente.', 'toolsbox-registros' ); ?></p>
 				</div>
 			</section>
@@ -708,6 +779,21 @@ final class FormEditorPage {
 			echo '<option value="' . esc_attr( $key ) . '" ' . selected( $key, $value, false ) . '>' . esc_html( $text ) . '</option>';
 		}
 		echo '</select></label>';
+	}
+
+	/**
+	 * Selector del logo desde la biblioteca de medios.
+	 *
+	 * @param int $id Adjunto guardado.
+	 * @return void
+	 */
+	private function logo_control( int $id ): void {
+		$url = $id > 0 ? wp_get_attachment_image_url( $id, 'thumbnail' ) : false;
+		echo '<div class="tbreg-control tbreg-pdf-logo"><span>' . esc_html__( 'Logo (JPG, PNG o WebP)', 'toolsbox-registros' ) . '</span>';
+		echo '<input type="hidden" name="tbreg_settings[pdf][logo_id]" value="' . esc_attr( (string) $id ) . '">';
+		echo '<img alt="" src="' . esc_url( (string) $url ) . '"' . ( false === $url ? ' hidden' : '' ) . '>';
+		echo '<span class="tbreg-pdf-logo-actions"><button type="button" class="button" data-tbreg-logo="choose">' . esc_html__( 'Elegir logo', 'toolsbox-registros' ) . '</button> ';
+		echo '<button type="button" class="button-link" data-tbreg-logo="remove"' . ( false === $url ? ' hidden' : '' ) . '>' . esc_html__( 'Quitar logo', 'toolsbox-registros' ) . '</button></span></div>';
 	}
 
 	/**

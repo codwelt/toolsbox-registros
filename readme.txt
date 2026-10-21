@@ -4,7 +4,7 @@ Tags: forms, registration, events, export, excel
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.9
+Stable tag: 0.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,11 @@ Sí. Copia la plantilla de templates/ dentro de toolsbox-registros/ en tu tema. 
 No. La desactivación conserva las tablas y los registros existentes.
 
 == Changelog ==
+
+= 0.4.0 =
+
+* Nuevo: diseño «Formato de inscripción y matrícula» para el PDF, configurable por formulario: colores, logo, título, subtítulo, opciones con casillas, recuadro de foto, espacio de uso de la institución, condiciones por secciones, firmas y pie de página.
+* Nuevo: descarga del formato en blanco desde Configuración → Comprobante en PDF.
 
 = 0.3.9 =
 

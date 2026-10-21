@@ -262,3 +262,7 @@
 .tbreg-field-details[open] > summary::after { transform: rotate(225deg); }
 @media (max-width: 600px) { .tbreg-always-switch { min-height: 32px; } }
 .tbreg-rule-values { display: contents; }
+.tbreg-pdf-colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; }
+.tbreg-pdf-colors .tbreg-control input[type="color"] { width: 64px; height: 32px; padding: 2px; }
+.tbreg-pdf-logo img { width: 96px; height: 96px; object-fit: contain; border: 1px solid #dcdcde; background: #fff; }
+.tbreg-pdf-logo-actions { display: flex; align-items: center; gap: 12px; font-weight: normal; }
